@@ -1,3 +1,6 @@
+Based off Techleads documents chatbot below, with nearly all of langchain documentation in the data.txt
+
+
 # chatgpt-retrieval
 
 Simple script to use ChatGPT on your own files.
