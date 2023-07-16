@@ -1,1 +1,3430 @@
-My dog's name is Sunny.
+Environment setup
+Using LangChain will usually require integrations with one or more model providers, data stores, APIs, etc. For this example, we'll use OpenAI's model APIs.
+
+First we'll need to install their Python package:
+
+pip install openai
+
+Accessing the API requires an API key, which you can get by creating an account and heading here. Once we have a key we'll want to set it as an environment variable by running:
+
+export OPENAI_API_KEY="..."
+
+If you'd prefer not to set an environment variable you can pass the key in directly via the openai_api_key named parameter when initiating the OpenAI LLM class:
+
+from langchain.llms import OpenAI
+
+llm = OpenAI(openai_api_key="...")
+
+Building an application
+Now we can start building our language model application. LangChain provides many modules that can be used to build language model applications. Modules can be used as stand-alones in simple applications and they can be combined for more complex use cases.
+
+LLMs
+Get predictions from a language model
+The basic building block of LangChain is the LLM, which takes in text and generates more text.
+
+As an example, suppose we're building an application that generates a company name based on a company description. In order to do this, we need to initialize an OpenAI model wrapper. In this case, since we want the outputs to be MORE random, we'll initialize our model with a HIGH temperature.
+
+from langchain.llms import OpenAI
+
+llm = OpenAI(temperature=0.9)
+
+And now we can pass in text and get predictions!
+
+llm.predict("What would be a good company name for a company that makes colorful socks?")
+# >> Feetful of Fun
+
+
+Chat models
+Chat models are a variation on language models. While chat models use language models under the hood, the interface they expose is a bit different: rather than expose a "text in, text out" API, they expose an interface where "chat messages" are the inputs and outputs.
+
+You can get chat completions by passing one or more messages to the chat model. The response will be a message. The types of messages currently supported in LangChain are AIMessage, HumanMessage, SystemMessage, and ChatMessage -- ChatMessage takes in an arbitrary role parameter. Most of the time, you'll just be dealing with HumanMessage, AIMessage, and SystemMessage.
+
+from langchain.chat_models import ChatOpenAI
+from langchain.schema import (
+    AIMessage,
+    HumanMessage,
+    SystemMessage
+)
+
+chat = ChatOpenAI(temperature=0)
+chat.predict_messages([HumanMessage(content="Translate this sentence from English to French. I love programming.")])
+# >> AIMessage(content="J'aime programmer.", additional_kwargs={})
+
+
+It is useful to understand how chat models are different from a normal LLM, but it can often be handy to just be able to treat them the same. LangChain makes that easy by also exposing an interface through which you can interact with a chat model as you would a normal LLM. You can access this through the predict interface.
+
+chat.predict("Translate this sentence from English to French. I love programming.")
+# >> J'aime programmer
+
+
+Prompt templates
+Most LLM applications do not pass user input directly into an LLM. Usually they will add the user input to a larger piece of text, called a prompt template, that provides additional context on the specific task at hand.
+
+In the previous example, the text we passed to the model contained instructions to generate a company name. For our application, it'd be great if the user only had to provide the description of a company/product, without having to worry about giving the model instructions.
+
+LLMs
+Chat models
+With PromptTemplates this is easy! In this case our template would be very simple:
+
+from langchain.prompts import PromptTemplate
+
+prompt = PromptTemplate.from_template("What is a good name for a company that makes {product}?")
+prompt.format(product="colorful socks")
+
+
+What is a good name for a company that makes colorful socks?
+
+Chains
+Now that we've got a model and a prompt template, we'll want to combine the two. Chains give us a way to link (or chain) together multiple primitives, like models, prompts, and other chains.
+
+LLMs
+Chat models
+The simplest and most common type of chain is an LLMChain, which passes an input first to a PromptTemplate and then to an LLM. We can construct an LLM chain from our existing model and prompt template.
+
+Using this we can replace
+
+llm.predict("What would be a good company name for a company that makes colorful socks?")
+
+
+with
+
+from langchain.chains import LLMChain
+
+chain = LLMChain(llm=llm, prompt=prompt)
+chain.run("colorful socks")
+
+Feetful of Fun
+
+There we go, our first chain! Understanding how this simple chain works will set you up well for working with more complex chains.
+
+Agents
+Our first chain ran a pre-determined sequence of steps. To handle complex workflows, we need to be able to dynamically choose actions based on inputs.
+
+Agents do just this: they use a language model to determine which actions to take and in what order. Agents are given access to tools, and they repeatedly choose a tool, run the tool, and observe the output until they come up with a final answer.
+
+To load an agent, you need to choose a(n):
+
+LLM/Chat model: The language model powering the agent.
+Tool(s): A function that performs a specific duty. This can be things like: Google Search, Database lookup, Python REPL, other chains. For a list of predefined tools and their specifications, see the Tools documentation.
+Agent name: A string that references a supported agent class. An agent class is largely parameterized by the prompt the language model uses to determine which action to take. Because this notebook focuses on the simplest, highest level API, this only covers using the standard supported agents. If you want to implement a custom agent, see here. For a list of supported agents and their specifications, see here.
+For this example, we'll be using SerpAPI to query a search engine.
+
+You'll need to install the SerpAPI Python package:
+
+pip install google-search-results
+
+And set the SERPAPI_API_KEY environment variable.
+
+LLMs
+Chat models
+from langchain.agents import AgentType, initialize_agent, load_tools
+from langchain.llms import OpenAI
+
+# The language model we're going to use to control the agent.
+llm = OpenAI(temperature=0)
+
+# The tools we'll give the Agent access to. Note that the 'llm-math' tool uses an LLM, so we need to pass that in.
+tools = load_tools(["serpapi", "llm-math"], llm=llm)
+
+# Finally, let's initialize an agent with the tools, the language model, and the type of agent we want to use.
+agent = initialize_agent(tools, llm, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True)
+
+# Let's test it out!
+agent.run("What was the high temperature in SF yesterday in Fahrenheit? What is that number raised to the .023 power?")
+
+
+> Entering new AgentExecutor chain...
+
+Thought: I need to find the temperature first, then use the calculator to raise it to the .023 power.
+Action: Search
+Action Input: "High temperature in SF yesterday"
+Observation: San Francisco Temperature Yesterday. Maximum temperature yesterday: 57 °F (at 1:56 pm) Minimum temperature yesterday: 49 °F (at 1:56 am) Average temperature ...
+
+Thought: I now have the temperature, so I can use the calculator to raise it to the .023 power.
+Action: Calculator
+Action Input: 57^.023
+Observation: Answer: 1.0974509573251117
+
+Thought: I now know the final answer
+Final Answer: The high temperature in SF yesterday in Fahrenheit raised to the .023 power is 1.0974509573251117.
+
+> Finished chain.
+
+
+The high temperature in SF yesterday in Fahrenheit raised to the .023 power is 1.0974509573251117.
+
+
+Memory
+The chains and agents we've looked at so far have been stateless, but for many applications it's necessary to reference past interactions. This is clearly the case with a chatbot for example, where you want it to understand new messages in the context of past messages.
+
+The Memory module gives you a way to maintain application state. The base Memory interface is simple: it lets you update state given the latest run inputs and outputs and it lets you modify (or contextualize) the next input using the stored state.
+
+There are a number of built-in memory systems. The simplest of these is a buffer memory which just prepends the last few inputs/outputs to the current input - we will use this in the example below.
+
+LLMs
+Chat models
+from langchain import OpenAI, ConversationChain
+
+llm = OpenAI(temperature=0)
+conversation = ConversationChain(llm=llm, verbose=True)
+
+conversation.run("Hi there!")
+
+here's what's going on under the hood
+
+> Entering new chain...
+Prompt after formatting:
+The following is a friendly conversation between a human and an AI. The AI is talkative and provides lots of specific details from its context. If the AI does not know the answer to a question, it truthfully says it does not know.
+
+Current conversation:
+
+Human: Hi there!
+AI:
+
+> Finished chain.
+
+>> 'Hello! How are you today?'
+
+
+Now if we run the chain again
+
+conversation.run("I'm doing well! Just having a conversation with an AI.")
+
+
+we'll see that the full prompt that's passed to the model contains the input and output of our first interaction, along with our latest input
+
+> Entering new chain...
+Prompt after formatting:
+The following is a friendly conversation between a human and an AI. The AI is talkative and provides lots of specific details from its context. If the AI does not know the answer to a question, it truthfully says it does not know.
+
+Current conversation:
+
+Human: Hi there!
+AI:  Hello! How are you today?
+Human: I'm doing well! Just having a conversation with an AI.
+AI:
+
+> Finished chain.
+
+>> "That's great! What would you like to talk about?"
+
+
+
+
+
+
+
+
+
+
+
+
+Prompt templates
+
+Language models take text as input - that text is commonly referred to as a prompt. Typically this is not simply a hardcoded string but rather a combination of a template, some examples, and user input. LangChain provides several classes and functions to make constructing and working with prompts easy.
+
+What is a prompt template?
+A prompt template refers to a reproducible way to generate a prompt. It contains a text string ("the template"), that can take in a set of parameters from the end user and generates a prompt.
+
+A prompt template can contain:
+
+instructions to the language model,
+a set of few shot examples to help the language model generate a better response,
+a question to the language model.
+Here's the simplest example:
+
+from langchain import PromptTemplate
+
+
+template = """/
+You are a naming consultant for new companies.
+What is a good name for a company that makes {product}?
+"""
+
+prompt = PromptTemplate.from_template(template)
+prompt.format(product="colorful socks")
+
+    You are a naming consultant for new companies.
+    What is a good name for a company that makes colorful socks?
+
+
+Create a prompt template
+You can create simple hardcoded prompts using the PromptTemplate class. Prompt templates can take any number of input variables, and can be formatted to generate a prompt.
+
+from langchain import PromptTemplate
+
+# An example prompt with no input variables
+no_input_prompt = PromptTemplate(input_variables=[], template="Tell me a joke.")
+no_input_prompt.format()
+# -> "Tell me a joke."
+
+# An example prompt with one input variable
+one_input_prompt = PromptTemplate(input_variables=["adjective"], template="Tell me a {adjective} joke.")
+one_input_prompt.format(adjective="funny")
+# -> "Tell me a funny joke."
+
+# An example prompt with multiple input variables
+multiple_input_prompt = PromptTemplate(
+    input_variables=["adjective", "content"], 
+    template="Tell me a {adjective} joke about {content}."
+)
+multiple_input_prompt.format(adjective="funny", content="chickens")
+# -> "Tell me a funny joke about chickens."
+
+
+If you do not wish to specify input_variables manually, you can also create a PromptTemplate using from_template class method. langchain will automatically infer the input_variables based on the template passed.
+
+template = "Tell me a {adjective} joke about {content}."
+
+prompt_template = PromptTemplate.from_template(template)
+prompt_template.input_variables
+# -> ['adjective', 'content']
+prompt_template.format(adjective="funny", content="chickens")
+# -> Tell me a funny joke about chickens.
+
+You can create custom prompt templates that format the prompt in any way you want. For more information, see Custom Prompt Templates.
+
+Chat prompt template
+Chat Models take a list of chat messages as input - this list commonly referred to as a prompt. These chat messages differ from raw string (which you would pass into a LLM model) in that every message is associated with a role.
+
+For example, in OpenAI Chat Completion API, a chat message can be associated with the AI, human or system role. The model is supposed to follow instruction from system chat message more closely.
+
+LangChain provides several prompt templates to make constructing and working with prompts easily. You are encouraged to use these chat related prompt templates instead of PromptTemplate when querying chat models to fully exploit the potential of underlying chat model.
+
+from langchain.prompts import (
+    ChatPromptTemplate,
+    PromptTemplate,
+    SystemMessagePromptTemplate,
+    AIMessagePromptTemplate,
+    HumanMessagePromptTemplate,
+)
+from langchain.schema import (
+    AIMessage,
+    HumanMessage,
+    SystemMessage
+)
+
+To create a message template associated with a role, you use MessagePromptTemplate.
+
+For convenience, there is a from_template method exposed on the template. If you were to use this template, this is what it would look like:
+
+template="You are a helpful assistant that translates {input_language} to {output_language}."
+system_message_prompt = SystemMessagePromptTemplate.from_template(template)
+human_template="{text}"
+human_message_prompt = HumanMessagePromptTemplate.from_template(human_template)
+
+
+If you wanted to construct the MessagePromptTemplate more directly, you could create a PromptTemplate outside and then pass it in, eg:
+
+prompt=PromptTemplate(
+    template="You are a helpful assistant that translates {input_language} to {output_language}.",
+    input_variables=["input_language", "output_language"],
+)
+system_message_prompt_2 = SystemMessagePromptTemplate(prompt=prompt)
+
+assert system_message_prompt == system_message_prompt_2
+
+
+After that, you can build a ChatPromptTemplate from one or more MessagePromptTemplates. You can use ChatPromptTemplate's format_prompt -- this returns a PromptValue, which you can convert to a string or Message object, depending on whether you want to use the formatted value as input to an llm or chat model.
+
+chat_prompt = ChatPromptTemplate.from_messages([system_message_prompt, human_message_prompt])
+
+# get a chat completion from the formatted messages
+chat_prompt.format_prompt(input_language="English", output_language="French", text="I love programming.").to_messages()
+
+
+    [SystemMessage(content='You are a helpful assistant that translates English to French.', additional_kwargs={}),
+     HumanMessage(content='I love programming.', additional_kwargs={})]
+
+
+
+
+
+
+
+
+
+
+
+
+
+LLMs
+Large Language Models (LLMs) are a core component of LangChain. LangChain does not serve it's own LLMs, but rather provides a standard interface for interacting with many different LLMs.
+
+For more detailed documentation check out our:
+
+How-to guides: Walkthroughs of core functionality, like streaming, async, etc.
+
+Integrations: How to use different LLM providers (OpenAI, Anthropic, etc.)
+
+Get started
+There are lots of LLM providers (OpenAI, Cohere, Hugging Face, etc) - the LLM class is designed to provide a standard interface for all of them.
+
+In this walkthrough we'll work with an OpenAI LLM wrapper, although the functionalities highlighted are generic for all LLM types.
+
+Setup
+To start we'll need to install the OpenAI Python package:
+
+pip install openai
+
+Accessing the API requires an API key, which you can get by creating an account and heading here. Once we have a key we'll want to set it as an environment variable by running:
+
+export OPENAI_API_KEY="..."
+
+If you'd prefer not to set an environment variable you can pass the key in directly via the openai_api_key named parameter when initiating the OpenAI LLM class:
+
+from langchain.llms import OpenAI
+
+llm = OpenAI(openai_api_key="...")
+
+otherwise you can initialize without any params:
+
+from langchain.llms import OpenAI
+
+llm = OpenAI()
+
+__call__: string in -> string out
+The simplest way to use an LLM is a callable: pass in a string, get a string completion.
+
+llm("Tell me a joke")
+
+    'Why did the chicken cross the road?\n\nTo get to the other side.'
+
+
+generate: batch calls, richer outputs
+generate lets you can call the model with a list of strings, getting back a more complete response than just the text. This complete response can includes things like multiple top responses and other LLM provider-specific information:
+
+llm_result = llm.generate(["Tell me a joke", "Tell me a poem"]*15)
+
+
+len(llm_result.generations)
+
+    30
+
+llm_result.generations[0]
+
+    [Generation(text='\n\nWhy did the chicken cross the road?\n\nTo get to the other side!'),
+     Generation(text='\n\nWhy did the chicken cross the road?\n\nTo get to the other side.')]
+
+
+llm_result.generations[-1]
+
+    [Generation(text="\n\nWhat if love neverspeech\n\nWhat if love never ended\n\nWhat if love was only a feeling\n\nI'll never know this love\n\nIt's not a feeling\n\nBut it's what we have for each other\n\nWe just know that love is something strong\n\nAnd we can't help but be happy\n\nWe just feel what love is for us\n\nAnd we love each other with all our heart\n\nWe just don't know how\n\nHow it will go\n\nBut we know that love is something strong\n\nAnd we'll always have each other\n\nIn our lives."),
+     Generation(text='\n\nOnce upon a time\n\nThere was a love so pure and true\n\nIt lasted for centuries\n\nAnd never became stale or dry\n\nIt was moving and alive\n\nAnd the heart of the love-ick\n\nIs still beating strong and true.')]
+
+
+You can also access provider specific information that is returned. This information is NOT standardized across providers.
+
+llm_result.llm_output
+
+    {'token_usage': {'completion_tokens': 3903,
+      'total_tokens': 4023,
+      'prompt_tokens': 120}}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Chat models
+Chat models are a variation on language models. While chat models use language models under the hood, the interface they expose is a bit different. Rather than expose a "text in, text out" API, they expose an interface where "chat messages" are the inputs and outputs.
+
+Chat model APIs are fairly new, so we are still figuring out the correct abstractions.
+
+The following sections of documentation are provided:
+
+How-to guides: Walkthroughs of core functionality, like streaming, creating chat prompts, etc.
+
+Integrations: How to use different chat model providers (OpenAI, Anthropic, etc).
+
+Get started
+Setup
+To start we'll need to install the OpenAI Python package:
+
+pip install openai
+
+Accessing the API requires an API key, which you can get by creating an account and heading here. Once we have a key we'll want to set it as an environment variable by running:
+
+export OPENAI_API_KEY="..."
+
+If you'd prefer not to set an environment variable you can pass the key in directly via the openai_api_key named parameter when initiating the OpenAI LLM class:
+
+from langchain.chat_models import ChatOpenAI
+
+chat = ChatOpenAI(openai_api_key="...")
+
+otherwise you can initialize without any params:
+
+from langchain.chat_models import ChatOpenAI
+
+chat = ChatOpenAI()
+
+Messages
+The chat model interface is based around messages rather than raw text. The types of messages currently supported in LangChain are AIMessage, HumanMessage, SystemMessage, and ChatMessage -- ChatMessage takes in an arbitrary role parameter. Most of the time, you'll just be dealing with HumanMessage, AIMessage, and SystemMessage
+
+__call__
+Messages in -> message out
+You can get chat completions by passing one or more messages to the chat model. The response will be a message.
+
+from langchain.schema import (
+    AIMessage,
+    HumanMessage,
+    SystemMessage
+)
+
+chat([HumanMessage(content="Translate this sentence from English to French: I love programming.")])
+
+
+    AIMessage(content="J'aime programmer.", additional_kwargs={})
+
+
+OpenAI's chat model supports multiple messages as input. See here for more information. Here is an example of sending a system and user message to the chat model:
+
+messages = [
+    SystemMessage(content="You are a helpful assistant that translates English to French."),
+    HumanMessage(content="I love programming.")
+]
+chat(messages)
+
+
+    AIMessage(content="J'aime programmer.", additional_kwargs={})
+
+
+generate
+Batch calls, richer outputs
+You can go one step further and generate completions for multiple sets of messages using generate. This returns an LLMResult with an additional message parameter.
+
+batch_messages = [
+    [
+        SystemMessage(content="You are a helpful assistant that translates English to French."),
+        HumanMessage(content="I love programming.")
+    ],
+    [
+        SystemMessage(content="You are a helpful assistant that translates English to French."),
+        HumanMessage(content="I love artificial intelligence.")
+    ],
+]
+result = chat.generate(batch_messages)
+result
+
+
+    LLMResult(generations=[[ChatGeneration(text="J'aime programmer.", generation_info=None, message=AIMessage(content="J'aime programmer.", additional_kwargs={}))], [ChatGeneration(text="J'aime l'intelligence artificielle.", generation_info=None, message=AIMessage(content="J'aime l'intelligence artificielle.", additional_kwargs={}))]], llm_output={'token_usage': {'prompt_tokens': 57, 'completion_tokens': 20, 'total_tokens': 77}})
+
+
+You can recover things like token usage from this LLMResult
+
+result.llm_output
+
+    {'token_usage': {'prompt_tokens': 57,
+      'completion_tokens': 20,
+      'total_tokens': 77}}
+
+
+
+
+
+
+
+
+
+
+
+
+
+Text embedding models
+The Embeddings class is a class designed for interfacing with text embedding models. There are lots of embedding model providers (OpenAI, Cohere, Hugging Face, etc) - this class is designed to provide a standard interface for all of them.
+
+Embeddings create a vector representation of a piece of text. This is useful because it means we can think about text in the vector space, and do things like semantic search where we look for pieces of text that are most similar in the vector space.
+
+The base Embeddings class in LangChain exposes two methods: one for embedding documents and one for embedding a query. The former takes as input multiple texts, while the latter takes a single text. The reason for having these as two separate methods is that some embedding providers have different embedding methods for documents (to be searched over) vs queries (the search query itself).
+
+Get started
+Setup
+To start we'll need to install the OpenAI Python package:
+
+pip install openai
+
+Accessing the API requires an API key, which you can get by creating an account and heading here. Once we have a key we'll want to set it as an environment variable by running:
+
+export OPENAI_API_KEY="..."
+
+If you'd prefer not to set an environment variable you can pass the key in directly via the openai_api_key named parameter when initiating the OpenAI LLM class:
+
+from langchain.embeddings import OpenAIEmbeddings
+
+embeddings_model = OpenAIEmbeddings(openai_api_key="...")
+
+otherwise you can initialize without any params:
+
+from langchain.embeddings import OpenAIEmbeddings
+
+embeddings_model = OpenAIEmbeddings()
+
+embed_documents
+Embed list of texts
+embeddings = embeddings_model.embed_documents(
+    [
+        "Hi there!",
+        "Oh, hello!",
+        "What's your name?",
+        "My friends call me World",
+        "Hello World!"
+    ]
+)
+len(embeddings), len(embeddings[0])
+
+(5, 1536)
+
+embed_query
+Embed single query
+Embed a single piece of text for the purpose of comparing to other embedded pieces of texts.
+
+embedded_query = embeddings_model.embed_query("What was the name mentioned in the conversation?")
+embedded_query[:5]
+
+
+[0.0053587136790156364,
+ -0.0004999046213924885,
+ 0.038883671164512634,
+ -0.003001077566295862,
+ -0.00900818221271038]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Vector stores
+One of the most common ways to store and search over unstructured data is to embed it and store the resulting embedding vectors, and then at query time to embed the unstructured query and retrieve the embedding vectors that are 'most similar' to the embedded query. A vector store takes care of storing embedded data and performing vector search for you.
+
+Get started
+This walkthrough showcases basic functionality related to VectorStores. A key part of working with vector stores is creating the vector to put in them, which is usually created via embeddings. Therefore, it is recommended that you familiarize yourself with the text embedding model interfaces before diving into this.
+
+This walkthrough uses the FAISS vector database, which makes use of the Facebook AI Similarity Search (FAISS) library.
+
+pip install faiss-cpu
+
+We want to use OpenAIEmbeddings so we have to get the OpenAI API Key.
+
+import os
+import getpass
+
+os.environ['OPENAI_API_KEY'] = getpass.getpass('OpenAI API Key:')
+
+
+from langchain.document_loaders import TextLoader
+from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.vectorstores import FAISS
+
+
+raw_documents = TextLoader('../../../state_of_the_union.txt').load()
+text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
+documents = text_splitter.split_documents(raw_documents)
+
+embeddings = OpenAIEmbeddings()
+db = FAISS.from_documents(documents, embeddings)
+
+
+Similarity search
+query = "What did the president say about Ketanji Brown Jackson"
+docs = db.similarity_search(query)
+print(docs[0].page_content)
+
+
+    Tonight. I call on the Senate to: Pass the Freedom to Vote Act. Pass the John Lewis Voting Rights Act. And while you’re at it, pass the Disclose Act so Americans can know who is funding our elections.
+
+    Tonight, I’d like to honor someone who has dedicated his life to serve this country: Justice Stephen Breyer—an Army veteran, Constitutional scholar, and retiring Justice of the United States Supreme Court. Justice Breyer, thank you for your service.
+
+    One of the most serious constitutional responsibilities a President has is nominating someone to serve on the United States Supreme Court.
+
+    And I did that 4 days ago, when I nominated Circuit Court of Appeals Judge Ketanji Brown Jackson. One of our nation’s top legal minds, who will continue Justice Breyer’s legacy of excellence.
+
+
+Similarity search by vector
+It is also possible to do a search for documents similar to a given embedding vector using similarity_search_by_vector which accepts an embedding vector as a parameter instead of a string.
+
+embedding_vector = embeddings.embed_query(query)
+docs = db.similarity_search_by_vector(embedding_vector)
+
+Asynchronous operations
+Vector stores are usually run as a separate service that requires some IO operations, and therefore they might be called asynchronously. That gives performance benefits as you don't waste time waiting for responses from external services. That might also be important if you work with an asynchronous framework, such as FastAPI.
+
+Langchain supports async operation on vector stores. All the methods might be called using their async counterparts, with the prefix a, meaning async.
+
+Qdrant is a vector store, which supports all the async operations, thus it will be used in this walkthrough.
+
+pip install qdrant-client
+
+from langchain.vectorstores import Qdrant
+
+Create a vector store asynchronously
+db = await Qdrant.afrom_documents(documents, embeddings, "http://localhost:6333")
+
+
+Similarity search
+query = "What did the president say about Ketanji Brown Jackson"
+docs = await db.asimilarity_search(query)
+print(docs[0].page_content)
+
+
+    Tonight. I call on the Senate to: Pass the Freedom to Vote Act. Pass the John Lewis Voting Rights Act. And while you’re at it, pass the Disclose Act so Americans can know who is funding our elections.
+
+    Tonight, I’d like to honor someone who has dedicated his life to serve this country: Justice Stephen Breyer—an Army veteran, Constitutional scholar, and retiring Justice of the United States Supreme Court. Justice Breyer, thank you for your service.
+
+    One of the most serious constitutional responsibilities a President has is nominating someone to serve on the United States Supreme Court.
+
+    And I did that 4 days ago, when I nominated Circuit Court of Appeals Judge Ketanji Brown Jackson. One of our nation’s top legal minds, who will continue Justice Breyer’s legacy of excellence.
+
+
+Similarity search by vector
+embedding_vector = embeddings.embed_query(query)
+docs = await db.asimilarity_search_by_vector(embedding_vector)
+
+Maximum marginal relevance search (MMR)
+Maximal marginal relevance optimizes for similarity to query AND diversity among selected documents. It is also supported in async API.
+
+query = "What did the president say about Ketanji Brown Jackson"
+found_docs = await qdrant.amax_marginal_relevance_search(query, k=2, fetch_k=10)
+for i, doc in enumerate(found_docs):
+    print(f"{i + 1}.", doc.page_content, "\n")
+
+
+1. Tonight. I call on the Senate to: Pass the Freedom to Vote Act. Pass the John Lewis Voting Rights Act. And while you’re at it, pass the Disclose Act so Americans can know who is funding our elections.
+
+Tonight, I’d like to honor someone who has dedicated his life to serve this country: Justice Stephen Breyer—an Army veteran, Constitutional scholar, and retiring Justice of the United States Supreme Court. Justice Breyer, thank you for your service.
+
+One of the most serious constitutional responsibilities a President has is nominating someone to serve on the United States Supreme Court.
+
+And I did that 4 days ago, when I nominated Circuit Court of Appeals Judge Ketanji Brown Jackson. One of our nation’s top legal minds, who will continue Justice Breyer’s legacy of excellence.
+
+2. We can’t change how divided we’ve been. But we can change how we move forward—on COVID-19 and other issues we must face together.
+
+I recently visited the New York City Police Department days after the funerals of Officer Wilbert Mora and his partner, Officer Jason Rivera.
+
+They were responding to a 9-1-1 call when a man shot and killed them with a stolen gun.
+
+Officer Mora was 27 years old.
+
+Officer Rivera was 22.
+
+Both Dominican Americans who’d grown up on the same streets they later chose to patrol as police officers.
+
+I spoke with their families and told them that we are forever in debt for their sacrifice, and we will carry on their mission to restore the trust and safety every community deserves.
+
+I’ve worked on these issues a long time.
+
+I know what works: Investing in crime preventionand community police officers who’ll walk the beat, who’ll know the neighborhood, and who can restore trust and safety.
+
+
+
+
+
+
+
+
+
+Chains
+Using an LLM in isolation is fine for simple applications, but more complex applications require chaining LLMs - either with each other or with other components.
+
+LangChain provides the Chain interface for such "chained" applications. We define a Chain very generically as a sequence of calls to components, which can include other chains. The base interface is simple:
+
+class Chain(BaseModel, ABC):
+    """Base interface that all chains should implement."""
+
+    memory: BaseMemory
+    callbacks: Callbacks
+
+    def __call__(
+        self,
+        inputs: Any,
+        return_only_outputs: bool = False,
+        callbacks: Callbacks = None,
+    ) -> Dict[str, Any]:
+        ...
+
+This idea of composing components together in a chain is simple but powerful. It drastically simplifies and makes more modular the implementation of complex applications, which in turn makes it much easier to debug, maintain, and improve your applications.
+
+For more specifics check out:
+
+How-to for walkthroughs of different chain features
+Foundational to get acquainted with core building block chains
+Document to learn how to incorporate documents into chains
+Popular chains for the most common use cases
+Additional to see some of the more advanced chains and integrations that you can use out of the box
+Why do we need chains?
+Chains allow us to combine multiple components together to create a single, coherent application. For example, we can create a chain that takes user input, formats it with a PromptTemplate, and then passes the formatted response to an LLM. We can build more complex chains by combining multiple chains together, or by combining chains with other components.
+
+Get started
+Using LLMChain
+The LLMChain is most basic building block chain. It takes in a prompt template, formats it with the user input and returns the response from an LLM.
+
+To use the LLMChain, first create a prompt template.
+
+from langchain.llms import OpenAI
+from langchain.prompts import PromptTemplate
+
+llm = OpenAI(temperature=0.9)
+prompt = PromptTemplate(
+    input_variables=["product"],
+    template="What is a good name for a company that makes {product}?",
+)
+
+
+We can now create a very simple chain that will take user input, format the prompt with it, and then send it to the LLM.
+
+from langchain.chains import LLMChain
+chain = LLMChain(llm=llm, prompt=prompt)
+
+# Run the chain only specifying the input variable.
+print(chain.run("colorful socks"))
+
+    Colorful Toes Co.
+
+If there are multiple variables, you can input them all at once using a dictionary.
+
+prompt = PromptTemplate(
+    input_variables=["company", "product"],
+    template="What is a good name for {company} that makes {product}?",
+)
+chain = LLMChain(llm=llm, prompt=prompt)
+print(chain.run({
+    'company': "ABC Startup",
+    'product': "colorful socks"
+    }))
+
+
+    Socktopia Colourful Creations.
+
+You can use a chat model in an LLMChain as well:
+
+from langchain.chat_models import ChatOpenAI
+from langchain.prompts.chat import (
+    ChatPromptTemplate,
+    HumanMessagePromptTemplate,
+)
+human_message_prompt = HumanMessagePromptTemplate(
+        prompt=PromptTemplate(
+            template="What is a good name for a company that makes {product}?",
+            input_variables=["product"],
+        )
+    )
+chat_prompt_template = ChatPromptTemplate.from_messages([human_message_prompt])
+chat = ChatOpenAI(temperature=0.9)
+chain = LLMChain(llm=chat, prompt=chat_prompt_template)
+print(chain.run("colorful socks"))
+
+
+    Rainbow Socks Co.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Memory
+🚧 Docs under construction 🚧
+
+By default, Chains and Agents are stateless, meaning that they treat each incoming query independently (like the underlying LLMs and chat models themselves). In some applications, like chatbots, it is essential to remember previous interactions, both in the short and long-term. The Memory class does exactly that.
+
+LangChain provides memory components in two forms. First, LangChain provides helper utilities for managing and manipulating previous chat messages. These are designed to be modular and useful regardless of how they are used. Secondly, LangChain provides easy ways to incorporate these utilities into chains.
+
+Get started
+Memory involves keeping a concept of state around throughout a user's interactions with an language model. A user's interactions with a language model are captured in the concept of ChatMessages, so this boils down to ingesting, capturing, transforming and extracting knowledge from a sequence of chat messages. There are many different ways to do this, each of which exists as its own memory type.
+
+In general, for each type of memory there are two ways to understanding using memory. These are the standalone functions which extract information from a sequence of messages, and then there is the way you can use this type of memory in a chain.
+
+Memory can return multiple pieces of information (for example, the most recent N messages and a summary of all previous messages). The returned information can either be a string or a list of messages.
+
+We will walk through the simplest form of memory: "buffer" memory, which just involves keeping a buffer of all prior messages. We will show how to use the modular utility functions here, then show how it can be used in a chain (both returning a string as well as a list of messages).
+
+ChatMessageHistory
+One of the core utility classes underpinning most (if not all) memory modules is the ChatMessageHistory class. This is a super lightweight wrapper which exposes convenience methods for saving Human messages, AI messages, and then fetching them all.
+
+You may want to use this class directly if you are managing memory outside of a chain.
+
+from langchain.memory import ChatMessageHistory
+
+history = ChatMessageHistory()
+
+history.add_user_message("hi!")
+
+history.add_ai_message("whats up?")
+
+history.messages
+
+    [HumanMessage(content='hi!', additional_kwargs={}),
+     AIMessage(content='whats up?', additional_kwargs={})]
+
+ConversationBufferMemory
+We now show how to use this simple concept in a chain. We first showcase ConversationBufferMemory which is just a wrapper around ChatMessageHistory that extracts the messages in a variable.
+
+We can first extract it as a string.
+
+from langchain.memory import ConversationBufferMemory
+
+memory = ConversationBufferMemory()
+memory.chat_memory.add_user_message("hi!")
+memory.chat_memory.add_ai_message("whats up?")
+
+memory.load_memory_variables({})
+
+    {'history': 'Human: hi!\nAI: whats up?'}
+
+We can also get the history as a list of messages
+
+memory = ConversationBufferMemory(return_messages=True)
+memory.chat_memory.add_user_message("hi!")
+memory.chat_memory.add_ai_message("whats up?")
+
+memory.load_memory_variables({})
+
+    {'history': [HumanMessage(content='hi!', additional_kwargs={}),
+      AIMessage(content='whats up?', additional_kwargs={})]}
+
+
+Using in a chain
+Finally, let's take a look at using this in a chain (setting verbose=True so we can see the prompt).
+
+from langchain.llms import OpenAI
+from langchain.chains import ConversationChain
+
+
+llm = OpenAI(temperature=0)
+conversation = ConversationChain(
+    llm=llm,
+    verbose=True,
+    memory=ConversationBufferMemory()
+)
+
+conversation.predict(input="Hi there!")
+
+
+
+    > Entering new ConversationChain chain...
+    Prompt after formatting:
+    The following is a friendly conversation between a human and an AI. The AI is talkative and provides lots of specific details from its context. If the AI does not know the answer to a question, it truthfully says it does not know.
+
+    Current conversation:
+
+    Human: Hi there!
+    AI:
+
+    > Finished chain.
+
+
+
+
+
+    " Hi there! It's nice to meet you. How can I help you today?"
+
+
+conversation.predict(input="I'm doing well! Just having a conversation with an AI.")
+
+
+
+
+    > Entering new ConversationChain chain...
+    Prompt after formatting:
+    The following is a friendly conversation between a human and an AI. The AI is talkative and provides lots of specific details from its context. If the AI does not know the answer to a question, it truthfully says it does not know.
+
+    Current conversation:
+    Human: Hi there!
+    AI:  Hi there! It's nice to meet you. How can I help you today?
+    Human: I'm doing well! Just having a conversation with an AI.
+    AI:
+
+    > Finished chain.
+
+
+
+
+
+    " That's great! It's always nice to have a conversation with someone new. What would you like to talk about?"
+
+
+conversation.predict(input="Tell me about yourself.")
+
+
+
+    > Entering new ConversationChain chain...
+    Prompt after formatting:
+    The following is a friendly conversation between a human and an AI. The AI is talkative and provides lots of specific details from its context. If the AI does not know the answer to a question, it truthfully says it does not know.
+
+    Current conversation:
+    Human: Hi there!
+    AI:  Hi there! It's nice to meet you. How can I help you today?
+    Human: I'm doing well! Just having a conversation with an AI.
+    AI:  That's great! It's always nice to have a conversation with someone new. What would you like to talk about?
+    Human: Tell me about yourself.
+    AI:
+
+    > Finished chain.
+
+
+
+
+
+    " Sure! I'm an AI created to help people with their everyday tasks. I'm programmed to understand natural language and provide helpful information. I'm also constantly learning and updating my knowledge base so I can provide more accurate and helpful answers."
+
+
+Saving Message History
+You may often have to save messages, and then load them to use again. This can be done easily by first converting the messages to normal python dictionaries, saving those (as json or something) and then loading those. Here is an example of doing that.
+
+import json
+
+from langchain.memory import ChatMessageHistory
+from langchain.schema import messages_from_dict, messages_to_dict
+
+history = ChatMessageHistory()
+
+history.add_user_message("hi!")
+
+history.add_ai_message("whats up?")
+
+
+dicts = messages_to_dict(history.messages)
+
+dicts
+
+    [{'type': 'human', 'data': {'content': 'hi!', 'additional_kwargs': {}}},
+     {'type': 'ai', 'data': {'content': 'whats up?', 'additional_kwargs': {}}}]
+
+
+new_messages = messages_from_dict(dicts)
+
+new_messages
+
+    [HumanMessage(content='hi!', additional_kwargs={}),
+     AIMessage(content='whats up?', additional_kwargs={})]
+
+And that's it for the getting started! There are plenty of different types of memory, check out our examples to see them all
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+How to add Memory to an Agent
+This notebook goes over adding memory to an Agent. Before going through this notebook, please walkthrough the following notebooks, as this will build on top of both of them:
+
+Adding memory to an LLM Chain
+Custom Agents
+In order to add a memory to an agent we are going to the the following steps:
+
+We are going to create an LLMChain with memory.
+We are going to use that LLMChain to create a custom Agent.
+For the purposes of this exercise, we are going to create a simple custom Agent that has access to a search tool and utilizes the ConversationBufferMemory class.
+
+from langchain.agents import ZeroShotAgent, Tool, AgentExecutor
+from langchain.memory import ConversationBufferMemory
+from langchain import OpenAI, LLMChain
+from langchain.utilities import GoogleSearchAPIWrapper
+
+search = GoogleSearchAPIWrapper()
+tools = [
+    Tool(
+        name="Search",
+        func=search.run,
+        description="useful for when you need to answer questions about current events",
+    )
+]
+
+
+Notice the usage of the chat_history variable in the PromptTemplate, which matches up with the dynamic key name in the ConversationBufferMemory.
+
+prefix = """Have a conversation with a human, answering the following questions as best you can. You have access to the following tools:"""
+suffix = """Begin!"
+
+{chat_history}
+Question: {input}
+{agent_scratchpad}"""
+
+prompt = ZeroShotAgent.create_prompt(
+    tools,
+    prefix=prefix,
+    suffix=suffix,
+    input_variables=["input", "chat_history", "agent_scratchpad"],
+)
+memory = ConversationBufferMemory(memory_key="chat_history")
+
+
+We can now construct the LLMChain, with the Memory object, and then create the agent.
+
+llm_chain = LLMChain(llm=OpenAI(temperature=0), prompt=prompt)
+agent = ZeroShotAgent(llm_chain=llm_chain, tools=tools, verbose=True)
+agent_chain = AgentExecutor.from_agent_and_tools(
+    agent=agent, tools=tools, verbose=True, memory=memory
+)
+
+
+agent_chain.run(input="How many people live in canada?")
+
+    
+    
+    > Entering new AgentExecutor chain...
+    Thought: I need to find out the population of Canada
+    Action: Search
+    Action Input: Population of Canada
+    Observation: The current population of Canada is 38,566,192 as of Saturday, December 31, 2022, based on Worldometer elaboration of the latest United Nations data. · Canada ... Additional information related to Canadian population trends can be found on Statistics Canada's Population and Demography Portal. Population of Canada (real- ... Index to the latest information from the Census of Population. This survey conducted by Statistics Canada provides a statistical portrait of Canada and its ... 14 records ... Estimated number of persons by quarter of a year and by year, Canada, provinces and territories. The 2021 Canadian census counted a total population of 36,991,981, an increase of around 5.2 percent over the 2016 figure. ... Between 1990 and 2008, the ... ( 2 ) Census reports and other statistical publications from national statistical offices, ( 3 ) Eurostat: Demographic Statistics, ( 4 ) United Nations ... Canada is a country in North America. Its ten provinces and three territories extend from ... Population. • Q4 2022 estimate. 39,292,355 (37th). Information is available for the total Indigenous population and each of the three ... The term 'Aboriginal' or 'Indigenous' used on the Statistics Canada ... Jun 14, 2022 ... Determinants of health are the broad range of personal, social, economic and environmental factors that determine individual and population ... COVID-19 vaccination coverage across Canada by demographics and key populations. Updated every Friday at 12:00 PM Eastern Time.
+    Thought: I now know the final answer
+    Final Answer: The current population of Canada is 38,566,192 as of Saturday, December 31, 2022, based on Worldometer elaboration of the latest United Nations data.
+    > Finished AgentExecutor chain.
+
+
+
+
+
+    'The current population of Canada is 38,566,192 as of Saturday, December 31, 2022, based on Worldometer elaboration of the latest United Nations data.'
+
+
+To test the memory of this agent, we can ask a followup question that relies on information in the previous exchange to be answered correctly.
+
+agent_chain.run(input="what is their national anthem called?")
+
+    
+    
+    > Entering new AgentExecutor chain...
+    Thought: I need to find out what the national anthem of Canada is called.
+    Action: Search
+    Action Input: National Anthem of Canada
+    Observation: Jun 7, 2010 ... https://twitter.com/CanadaImmigrantCanadian National Anthem O Canada in HQ - complete with lyrics, captions, vocals & music.LYRICS:O Canada! Nov 23, 2022 ... After 100 years of tradition, O Canada was proclaimed Canada's national anthem in 1980. The music for O Canada was composed in 1880 by Calixa ... O Canada, national anthem of Canada. It was proclaimed the official national anthem on July 1, 1980. “God Save the Queen” remains the royal anthem of Canada ... O Canada! Our home and native land! True patriot love in all of us command. Car ton bras sait porter l'épée,. Il sait porter la croix! "O Canada" (French: Ô Canada) is the national anthem of Canada. The song was originally commissioned by Lieutenant Governor of Quebec Théodore Robitaille ... Feb 1, 2018 ... It was a simple tweak — just two words. But with that, Canada just voted to make its national anthem, “O Canada,” gender neutral, ... "O Canada" was proclaimed Canada's national anthem on July 1,. 1980, 100 years after it was first sung on June 24, 1880. The music. Patriotic music in Canada dates back over 200 years as a distinct category from British or French patriotism, preceding the first legal steps to ... Feb 4, 2022 ... English version: O Canada! Our home and native land! True patriot love in all of us command. With glowing hearts we ... Feb 1, 2018 ... Canada's Senate has passed a bill making the country's national anthem gender-neutral. If you're not familiar with the words to “O Canada,” ...
+    Thought: I now know the final answer.
+    Final Answer: The national anthem of Canada is called "O Canada".
+    > Finished AgentExecutor chain.
+
+
+
+
+
+    'The national anthem of Canada is called "O Canada".'
+
+
+We can see that the agent remembered that the previous question was about Canada, and properly asked Google Search what the name of Canada's national anthem was.
+
+For fun, let's compare this to an agent that does NOT have memory.
+
+prefix = """Have a conversation with a human, answering the following questions as best you can. You have access to the following tools:"""
+suffix = """Begin!"
+
+Question: {input}
+{agent_scratchpad}"""
+
+prompt = ZeroShotAgent.create_prompt(
+    tools, prefix=prefix, suffix=suffix, input_variables=["input", "agent_scratchpad"]
+)
+llm_chain = LLMChain(llm=OpenAI(temperature=0), prompt=prompt)
+agent = ZeroShotAgent(llm_chain=llm_chain, tools=tools, verbose=True)
+agent_without_memory = AgentExecutor.from_agent_and_tools(
+    agent=agent, tools=tools, verbose=True
+)
+
+
+agent_without_memory.run("How many people live in canada?")
+
+    
+    
+    > Entering new AgentExecutor chain...
+    Thought: I need to find out the population of Canada
+    Action: Search
+    Action Input: Population of Canada
+    Observation: The current population of Canada is 38,566,192 as of Saturday, December 31, 2022, based on Worldometer elaboration of the latest United Nations data. · Canada ... Additional information related to Canadian population trends can be found on Statistics Canada's Population and Demography Portal. Population of Canada (real- ... Index to the latest information from the Census of Population. This survey conducted by Statistics Canada provides a statistical portrait of Canada and its ... 14 records ... Estimated number of persons by quarter of a year and by year, Canada, provinces and territories. The 2021 Canadian census counted a total population of 36,991,981, an increase of around 5.2 percent over the 2016 figure. ... Between 1990 and 2008, the ... ( 2 ) Census reports and other statistical publications from national statistical offices, ( 3 ) Eurostat: Demographic Statistics, ( 4 ) United Nations ... Canada is a country in North America. Its ten provinces and three territories extend from ... Population. • Q4 2022 estimate. 39,292,355 (37th). Information is available for the total Indigenous population and each of the three ... The term 'Aboriginal' or 'Indigenous' used on the Statistics Canada ... Jun 14, 2022 ... Determinants of health are the broad range of personal, social, economic and environmental factors that determine individual and population ... COVID-19 vaccination coverage across Canada by demographics and key populations. Updated every Friday at 12:00 PM Eastern Time.
+    Thought: I now know the final answer
+    Final Answer: The current population of Canada is 38,566,192 as of Saturday, December 31, 2022, based on Worldometer elaboration of the latest United Nations data.
+    > Finished AgentExecutor chain.
+
+
+
+
+
+    'The current population of Canada is 38,566,192 as of Saturday, December 31, 2022, based on Worldometer elaboration of the latest United Nations data.'
+
+
+agent_without_memory.run("what is their national anthem called?")
+
+
+    
+    
+    > Entering new AgentExecutor chain...
+    Thought: I should look up the answer
+    Action: Search
+    Action Input: national anthem of [country]
+    Observation: Most nation states have an anthem, defined as "a song, as of praise, devotion, or patriotism"; most anthems are either marches or hymns in style. List of all countries around the world with its national anthem. ... Title and lyrics in the language of the country and translated into English, Aug 1, 2021 ... 1. Afghanistan, "Milli Surood" (National Anthem) · 2. Armenia, "Mer Hayrenik" (Our Fatherland) · 3. Azerbaijan (a transcontinental country with ... A national anthem is a patriotic musical composition symbolizing and evoking eulogies of the history and traditions of a country or nation. National Anthem of Every Country ; Fiji, “Meda Dau Doka” (“God Bless Fiji”) ; Finland, “Maamme”. (“Our Land”) ; France, “La Marseillaise” (“The Marseillaise”). You can find an anthem in the menu at the top alphabetically or you can use the search feature. This site is focussed on the scholarly study of national anthems ... Feb 13, 2022 ... The 38-year-old country music artist had the honor of singing the National Anthem during this year's big game, and she did not disappoint. Oldest of the World's National Anthems ; France, La Marseillaise (“The Marseillaise”), 1795 ; Argentina, Himno Nacional Argentino (“Argentine National Anthem”) ... Mar 3, 2022 ... Country music star Jessie James Decker gained the respect of music and hockey fans alike after a jaw-dropping rendition of "The Star-Spangled ... This list shows the country on the left, the national anthem in the ... There are many countries over the world who have a national anthem of their own.
+    Thought: I now know the final answer
+    Final Answer: The national anthem of [country] is [name of anthem].
+    > Finished AgentExecutor chain.
+
+
+
+
+
+    'The national anthem of [country] is [name of anthem].'
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+How to add Memory to an LLMChain
+This notebook goes over how to use the Memory class with an LLMChain. For the purposes of this walkthrough, we will add the ConversationBufferMemory class, although this can be any memory class.
+
+from langchain.memory import ConversationBufferMemory
+from langchain import OpenAI, LLMChain, PromptTemplate
+
+The most important step is setting up the prompt correctly. In the below prompt, we have two input keys: one for the actual input, another for the input from the Memory class. Importantly, we make sure the keys in the PromptTemplate and the ConversationBufferMemory match up (chat_history).
+
+template = """You are a chatbot having a conversation with a human.
+
+{chat_history}
+Human: {human_input}
+Chatbot:"""
+
+prompt = PromptTemplate(
+    input_variables=["chat_history", "human_input"], template=template
+)
+memory = ConversationBufferMemory(memory_key="chat_history")
+
+
+llm_chain = LLMChain(
+    llm=OpenAI(),
+    prompt=prompt,
+    verbose=True,
+    memory=memory,
+)
+
+llm_chain.predict(human_input="Hi there my friend")
+
+    
+    
+    > Entering new LLMChain chain...
+    Prompt after formatting:
+    You are a chatbot having a conversation with a human.
+    
+    
+    Human: Hi there my friend
+    Chatbot:
+    
+    > Finished LLMChain chain.
+
+
+
+
+
+    ' Hi there, how are you doing today?'
+
+llm_chain.predict(human_input="Not too bad - how are you?")
+
+    
+    
+    > Entering new LLMChain chain...
+    Prompt after formatting:
+    You are a chatbot having a conversation with a human.
+    
+    
+    Human: Hi there my friend
+    AI:  Hi there, how are you doing today?
+    Human: Not too bad - how are you?
+    Chatbot:
+    
+    > Finished LLMChain chain.
+
+
+
+
+
+    " I'm doing great, thank you for asking!"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Agents
+Some applications require a flexible chain of calls to LLMs and other tools based on user input. The Agent interface provides the flexibility for such applications. An agent has access to a suite of tools, and determines which ones to use depending on the user input. Agents can use multiple tools, and use the output of one tool as the input to the next.
+
+There are two main types of agents:
+
+Action agents: at each timestep, decide on the next action using the outputs of all previous actions
+Plan-and-execute agents: decide on the full sequence of actions up front, then execute them all without updating the plan
+Action agents are suitable for small tasks, while plan-and-execute agents are better for complex or long-running tasks that require maintaining long-term objectives and focus. Often the best approach is to combine the dynamism of an action agent with the planning abilities of a plan-and-execute agent by letting the plan-and-execute agent use action agents to execute plans.
+
+For a full list of agent types see agent types. Additional abstractions involved in agents are:
+
+Tools: the actions an agent can take. What tools you give an agent highly depend on what you want the agent to do
+Toolkits: wrappers around collections of tools that can be used together a specific use case. For example, in order for an agent to interact with a SQL database it will likely need one tool to execute queries and another to inspect tables
+Action agents
+At a high-level an action agent:
+
+Receives user input
+Decides which tool, if any, to use and the tool input
+Calls the tool and records the output (also known as an "observation")
+Decides the next step using the history of tools, tool inputs, and observations
+Repeats 3-4 until it determines it can respond directly to the user
+Action agents are wrapped in agent executors, which are responsible for calling the agent, getting back an action and action input, calling the tool that the action references with the generated input, getting the output of the tool, and then passing all that information back into the agent to get the next action it should take.
+
+Although an agent can be constructed in many ways, it typically involves these components:
+
+Prompt template: Responsible for taking the user input and previous steps and constructing a prompt to send to the language model
+Language model: Takes the prompt with use input and action history and decides what to do next
+Output parser: Takes the output of the language model and parses it into the next action or a final answer
+Plan-and-execute agents
+At a high-level a plan-and-execute agent:
+
+Receives user input
+Plans the full sequence of steps to take
+Executes the steps in order, passing the outputs of past steps as inputs to future steps
+The most typical implementation is to have the planner be a language model, and the executor be an action agent. Read more here.
+
+Get started
+from langchain.agents import load_tools
+from langchain.agents import initialize_agent
+from langchain.agents import AgentType
+from langchain.llms import OpenAI
+
+First, let's load the language model we're going to use to control the agent.
+
+llm = OpenAI(temperature=0)
+
+Next, let's load some tools to use. Note that the llm-math tool uses an LLM, so we need to pass that in.
+
+tools = load_tools(["serpapi", "llm-math"], llm=llm)
+
+Finally, let's initialize an agent with the tools, the language model, and the type of agent we want to use.
+
+agent = initialize_agent(tools, llm, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True)
+
+
+Now let's test it out!
+
+agent.run("Who is Leo DiCaprio's girlfriend? What is her current age raised to the 0.43 power?")
+
+
+    
+    
+    > Entering new AgentExecutor chain...
+     I need to find out who Leo DiCaprio's girlfriend is and then calculate her age raised to the 0.43 power.
+    Action: Search
+    Action Input: "Leo DiCaprio girlfriend"
+    Observation: Camila Morrone
+    Thought: I need to find out Camila Morrone's age
+    Action: Search
+    Action Input: "Camila Morrone age"
+    Observation: 25 years
+    Thought: I need to calculate 25 raised to the 0.43 power
+    Action: Calculator
+    Action Input: 25^0.43
+    Observation: Answer: 3.991298452658078
+    
+    Thought: I now know the final answer
+    Final Answer: Camila Morrone is Leo DiCaprio's girlfriend and her current age raised to the 0.43 power is 3.991298452658078.
+    
+    > Finished chain.
+
+
+
+
+
+    "Camila Morrone is Leo DiCaprio's girlfriend and her current
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Agent types
+Action agents
+Agents use an LLM to determine which actions to take and in what order. An action can either be using a tool and observing its output, or returning a response to the user. Here are the agents available in LangChain.
+
+Zero-shot ReAct
+This agent uses the ReAct framework to determine which tool to use based solely on the tool's description. Any number of tools can be provided. This agent requires that a description is provided for each tool.
+
+Note: This is the most general purpose action agent.
+
+Structured input ReAct
+The structured tool chat agent is capable of using multi-input tools. Older agents are configured to specify an action input as a single string, but this agent can use a tools' argument schema to create a structured action input. This is useful for more complex tool usage, like precisely navigating around a browser.
+
+OpenAI Functions
+Certain OpenAI models (like gpt-3.5-turbo-0613 and gpt-4-0613) have been explicitly fine-tuned to detect when a function should to be called and respond with the inputs that should be passed to the function. The OpenAI Functions Agent is designed to work with these models.
+
+Conversational
+This agent is designed to be used in conversational settings. The prompt is designed to make the agent helpful and conversational. It uses the ReAct framework to decide which tool to use, and uses memory to remember the previous conversation interactions.
+
+Self ask with search
+This agent utilizes a single tool that should be named Intermediate Answer. This tool should be able to lookup factual answers to questions. This agent is equivalent to the original self ask with search paper, where a Google search API was provided as the tool.
+
+ReAct document store
+This agent uses the ReAct framework to interact with a docstore. Two tools must be provided: a Search tool and a Lookup tool (they must be named exactly as so). The Search tool should search for a document, while the Lookup tool should lookup a term in the most recently found document. This agent is equivalent to the original ReAct paper, specifically the Wikipedia example.
+
+Plan-and-execute agents
+Plan and execute agents accomplish an objective by first planning what to do, then executing the sub tasks. This idea is largely inspired by BabyAGI and then the "Plan-and-Solve" paper.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Conversational
+This walkthrough demonstrates how to use an agent optimized for conversation. Other agents are often optimized for using tools to figure out the best response, which is not ideal in a conversational setting where you may want the agent to be able to chat with the user as well.
+
+This is accomplished with a specific type of agent (conversational-react-description) which expects to be used with a memory component.
+
+from langchain.agents import Tool
+from langchain.agents import AgentType
+from langchain.memory import ConversationBufferMemory
+from langchain import OpenAI
+from langchain.utilities import SerpAPIWrapper
+from langchain.agents import initialize_agent
+
+search = SerpAPIWrapper()
+tools = [
+    Tool(
+        name = "Current Search",
+        func=search.run,
+        description="useful for when you need to answer questions about current events or the current state of the world"
+    ),
+]
+
+
+memory = ConversationBufferMemory(memory_key="chat_history")
+
+llm=OpenAI(temperature=0)
+agent_chain = initialize_agent(tools, llm, agent=AgentType.CONVERSATIONAL_REACT_DESCRIPTION, verbose=True, memory=memory)
+
+
+agent_chain.run(input="hi, i am bob")
+
+    > Entering new AgentExecutor chain...
+    
+    Thought: Do I need to use a tool? No
+    AI: Hi Bob, nice to meet you! How can I help you today?
+    
+    > Finished chain.
+
+
+    'Hi Bob, nice to meet you! How can I help you today?'
+
+agent_chain.run(input="what's my name?")
+
+    > Entering new AgentExecutor chain...
+    
+    Thought: Do I need to use a tool? No
+    AI: Your name is Bob!
+    
+    > Finished chain.
+
+
+    'Your name is Bob!'
+
+agent_chain.run("what are some good dinners to make this week, if i like thai food?")
+
+
+    > Entering new AgentExecutor chain...
+    
+    Thought: Do I need to use a tool? Yes
+    Action: Current Search
+    Action Input: Thai food dinner recipes
+    Observation: 59 easy Thai recipes for any night of the week · Marion Grasby's Thai spicy chilli and basil fried rice · Thai curry noodle soup · Marion Grasby's Thai Spicy ...
+    Thought: Do I need to use a tool? No
+    AI: Here are some great Thai dinner recipes you can try this week: Marion Grasby's Thai Spicy Chilli and Basil Fried Rice, Thai Curry Noodle Soup, Thai Green Curry with Coconut Rice, Thai Red Curry with Vegetables, and Thai Coconut Soup. I hope you enjoy them!
+    
+    > Finished chain.
+
+
+    "Here are some great Thai dinner recipes you can try this week: Marion Grasby's Thai Spicy Chilli and Basil Fried Rice, Thai Curry Noodle Soup, Thai Green Curry with Coconut Rice, Thai Red Curry with Vegetables, and Thai Coconut Soup. I hope you enjoy them!"
+
+
+agent_chain.run(input="tell me the last letter in my name, and also tell me who won the world cup in 1978?")
+
+
+    > Entering new AgentExecutor chain...
+    
+    Thought: Do I need to use a tool? Yes
+    Action: Current Search
+    Action Input: Who won the World Cup in 1978
+    Observation: Argentina national football team
+    Thought: Do I need to use a tool? No
+    AI: The last letter in your name is "b" and the winner of the 1978 World Cup was the Argentina national football team.
+    
+    > Finished chain.
+
+
+    'The last letter in your name is "b" and the winner of the 1978 World Cup was the Argentina national football team.'
+
+
+agent_chain.run(input="whats the current temperature in pomfret?")
+
+
+    > Entering new AgentExecutor chain...
+    
+    Thought: Do I need to use a tool? Yes
+    Action: Current Search
+    Action Input: Current temperature in Pomfret
+    Observation: Partly cloudy skies. High around 70F. Winds W at 5 to 10 mph. Humidity41%.
+    Thought: Do I need to use a tool? No
+    AI: The current temperature in Pomfret is around 70F with partly cloudy skies and winds W at 5 to 10 mph. The humidity is 41%.
+    
+    > Finished chain.
+
+
+    'The current temperature in Pomfret is around 70F with partly cloudy skies and winds W at 5 to 10 mph. The humidity is 41%.'
+
+
+Using a chat model
+The chat-conversational-react-description agent type lets us create a conversational agent using a chat model instead of an LLM.
+
+from langchain.memory import ConversationBufferMemory
+from langchain.chat_models import ChatOpenAI
+
+memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, temperature=0)
+agent_chain = initialize_agent(tools, llm, agent=AgentType.CHAT_CONVERSATIONAL_REACT_DESCRIPTION, verbose=True, memory=memory)
+
+
+agent_chain.run(input="hi, i am bob")
+
+    > Entering new AgentExecutor chain...
+    {
+        "action": "Final Answer",
+        "action_input": "Hello Bob! How can I assist you today?"
+    }
+    
+    > Finished chain.
+
+
+    'Hello Bob! How can I assist you today?'
+
+
+agent_chain.run(input="what's my name?")
+
+    > Entering new AgentExecutor chain...
+    {
+        "action": "Final Answer",
+        "action_input": "Your name is Bob."
+    }
+    
+    > Finished chain.
+
+
+    'Your name is Bob.'
+
+agent_chain.run("what are some good dinners to make this week, if i like thai food?")
+
+
+    > Entering new AgentExecutor chain...
+    {
+        "action": "Current Search",
+        "action_input": "Thai food dinner recipes"
+    }
+    Observation: 64 easy Thai recipes for any night of the week · Thai curry noodle soup · Thai yellow cauliflower, snake bean and tofu curry · Thai-spiced chicken hand pies · Thai ...
+    Thought:{
+        "action": "Final Answer",
+        "action_input": "Here are some Thai food dinner recipes you can try this week: Thai curry noodle soup, Thai yellow cauliflower, snake bean and tofu curry, Thai-spiced chicken hand pies, and many more. You can find the full list of recipes at the source I found earlier."
+    }
+    
+    > Finished chain.
+
+
+    'Here are some Thai food dinner recipes you can try this week: Thai curry noodle soup, Thai yellow cauliflower, snake bean and tofu curry, Thai-spiced chicken hand pies, and many more. You can find the full list of recipes at the source I found earlier.'
+
+
+agent_chain.run(input="tell me the last letter in my name, and also tell me who won the world cup in 1978?")
+
+
+    > Entering new AgentExecutor chain...
+    {
+        "action": "Final Answer",
+        "action_input": "The last letter in your name is 'b'. Argentina won the World Cup in 1978."
+    }
+    
+    > Finished chain.
+
+
+    "The last letter in your name is 'b'. Argentina won the World Cup in 1978."
+
+
+agent_chain.run(input="whats the weather like in pomfret?")
+
+    > Entering new AgentExecutor chain...
+    {
+        "action": "Current Search",
+        "action_input": "weather in pomfret"
+    }
+    Observation: Cloudy with showers. Low around 55F. Winds S at 5 to 10 mph. Chance of rain 60%. Humidity76%.
+    Thought:{
+        "action": "Final Answer",
+        "action_input": "Cloudy with showers. Low around 55F. Winds S at 5 to 10 mph. Chance of rain 60%. Humidity76%."
+    }
+    
+    > Finished chain.
+
+
+    'Cloudy with showers. Low around 55F. Winds S at 5 to 10 mph
+
+
+
+
+
+
+
+
+
+
+
+
+
+OpenAI functions
+Certain OpenAI models (like gpt-3.5-turbo-0613 and gpt-4-0613) have been fine-tuned to detect when a function should to be called and respond with the inputs that should be passed to the function. In an API call, you can describe functions and have the model intelligently choose to output a JSON object containing arguments to call those functions. The goal of the OpenAI Function APIs is to more reliably return valid and useful function calls than a generic text completion or chat API.
+
+The OpenAI Functions Agent is designed to work with these models.
+
+Install openai,google-search-results packages which are required as the langchain packages call them internally
+
+pip install openai google-search-results
+
+from langchain import LLMMathChain, OpenAI, SerpAPIWrapper, SQLDatabase, SQLDatabaseChain
+from langchain.agents import initialize_agent, Tool
+from langchain.agents import AgentType
+from langchain.chat_models import ChatOpenAI
+
+
+llm = ChatOpenAI(temperature=0, model="gpt-3.5-turbo-0613")
+search = SerpAPIWrapper()
+llm_math_chain = LLMMathChain.from_llm(llm=llm, verbose=True)
+db = SQLDatabase.from_uri("sqlite:///../../../../../notebooks/Chinook.db")
+db_chain = SQLDatabaseChain.from_llm(llm, db, verbose=True)
+tools = [
+    Tool(
+        name = "Search",
+        func=search.run,
+        description="useful for when you need to answer questions about current events. You should ask targeted questions"
+    ),
+    Tool(
+        name="Calculator",
+        func=llm_math_chain.run,
+        description="useful for when you need to answer questions about math"
+    ),
+    Tool(
+        name="FooBar-DB",
+        func=db_chain.run,
+        description="useful for when you need to answer questions about FooBar. Input should be in the form of a question containing full context"
+    )
+]
+
+
+agent = initialize_agent(tools, llm, agent=AgentType.OPENAI_FUNCTIONS, verbose=True)
+
+
+agent.run("Who is Leo DiCaprio's girlfriend? What is her current age raised to the 0.43 power?")
+
+
+    > Entering new  chain...
+    
+    Invoking: `Search` with `{'query': 'Leo DiCaprio girlfriend'}`
+    
+    
+    Amidst his casual romance with Gigi, Leo allegedly entered a relationship with 19-year old model, Eden Polani, in February 2023.
+    Invoking: `Calculator` with `{'expression': '19^0.43'}`
+    
+
+    > Entering new  chain...
+    19^0.43```text
+    19**0.43
+    ```
+    ...numexpr.evaluate("19**0.43")...
+    
+    Answer: 3.547023357958959
+    > Finished chain.
+    Answer: 3.547023357958959Leo DiCaprio's girlfriend is reportedly Eden Polani. Her current age raised to the power of 0.43 is approximately 3.55.
+    
+    > Finished chain.
+
+
+    "Leo DiCaprio's girlfriend is reportedly Eden Polani. Her current age raised to the power of 0.43 is approximately 3.55."
+
+
+
+
+
+
+
+
+
+
+OpenAI Multi Functions Agent
+This notebook showcases using an agent that uses the OpenAI functions ability to respond to the prompts of the user using a Large Language Model
+
+Install openai,google-search-results packages which are required as the langchain packages call them internally
+
+pip install openai google-search-results
+
+from langchain import SerpAPIWrapper
+from langchain.agents import initialize_agent, Tool
+from langchain.agents import AgentType
+from langchain.chat_models import ChatOpenAI
+
+The agent is given ability to perform search functionalities with the respective tool
+
+SerpAPIWrapper:
+
+This initializes the SerpAPIWrapper for search functionality (search).
+
+import os
+
+os.environ[
+    "SERPAPI_API_KEY"
+] = "897780527132b5f31d8d73c40c820d5ef2c2279687efa69f413a61f752027747"
+
+
+# Initialize the OpenAI language model
+# Replace <your_api_key> in openai_api_key="<your_api_key>" with your actual OpenAI key.
+llm = ChatOpenAI(temperature=0, model="gpt-3.5-turbo-0613")
+
+# Initialize the SerpAPIWrapper for search functionality
+# Replace <your_api_key> in openai_api_key="<your_api_key>" with your actual SerpAPI key.
+search = SerpAPIWrapper()
+
+# Define a list of tools offered by the agent
+tools = [
+    Tool(
+        name="Search",
+        func=search.run,
+        description="Useful when you need to answer questions about current events. You should ask targeted questions.",
+    ),
+]
+
+
+mrkl = initialize_agent(
+    tools, llm, agent=AgentType.OPENAI_MULTI_FUNCTIONS, verbose=True
+)
+
+
+# Do this so we can see exactly what's going on under the hood
+import langchain
+
+langchain.debug = True
+
+mrkl.run("What is the weather in LA and SF?")
+
+    [chain/start] [1:chain:AgentExecutor] Entering Chain run with input:
+    {
+      "input": "What is the weather in LA and SF?"
+    }
+    [llm/start] [1:chain:AgentExecutor > 2:llm:ChatOpenAI] Entering LLM run with input:
+    {
+      "prompts": [
+        "System: You are a helpful AI assistant.\nHuman: What is the weather in LA and SF?"
+      ]
+    }
+    [llm/end] [1:chain:AgentExecutor > 2:llm:ChatOpenAI] [2.91s] Exiting LLM run with output:
+    {
+      "generations": [
+        [
+          {
+            "text": "",
+            "generation_info": null,
+            "message": {
+              "content": "",
+              "additional_kwargs": {
+                "function_call": {
+                  "name": "tool_selection",
+                  "arguments": "{\n  \"actions\": [\n    {\n      \"action_name\": \"Search\",\n      \"action\": {\n        \"tool_input\": \"weather in Los Angeles\"\n      }\n    },\n    {\n      \"action_name\": \"Search\",\n      \"action\": {\n        \"tool_input\": \"weather in San Francisco\"\n      }\n    }\n  ]\n}"
+                }
+              },
+              "example": false
+            }
+          }
+        ]
+      ],
+      "llm_output": {
+        "token_usage": {
+          "prompt_tokens": 81,
+          "completion_tokens": 75,
+          "total_tokens": 156
+        },
+        "model_name": "gpt-3.5-turbo-0613"
+      },
+      "run": null
+    }
+    [tool/start] [1:chain:AgentExecutor > 3:tool:Search] Entering Tool run with input:
+    "{'tool_input': 'weather in Los Angeles'}"
+    [tool/end] [1:chain:AgentExecutor > 3:tool:Search] [608.693ms] Exiting Tool run with output:
+    "Mostly cloudy early, then sunshine for the afternoon. High 76F. Winds SW at 5 to 10 mph. Humidity59%."
+    [tool/start] [1:chain:AgentExecutor > 4:tool:Search] Entering Tool run with input:
+    "{'tool_input': 'weather in San Francisco'}"
+    [tool/end] [1:chain:AgentExecutor > 4:tool:Search] [517.475ms] Exiting Tool run with output:
+    "Partly cloudy this evening, then becoming cloudy after midnight. Low 53F. Winds WSW at 10 to 20 mph. Humidity83%."
+    [llm/start] [1:chain:AgentExecutor > 5:llm:ChatOpenAI] Entering LLM run with input:
+    {
+      "prompts": [
+        "System: You are a helpful AI assistant.\nHuman: What is the weather in LA and SF?\nAI: {'name': 'tool_selection', 'arguments': '{\\n  \"actions\": [\\n    {\\n      \"action_name\": \"Search\",\\n      \"action\": {\\n        \"tool_input\": \"weather in Los Angeles\"\\n      }\\n    },\\n    {\\n      \"action_name\": \"Search\",\\n      \"action\": {\\n        \"tool_input\": \"weather in San Francisco\"\\n      }\\n    }\\n  ]\\n}'}\nFunction: Mostly cloudy early, then sunshine for the afternoon. High 76F. Winds SW at 5 to 10 mph. Humidity59%.\nAI: {'name': 'tool_selection', 'arguments': '{\\n  \"actions\": [\\n    {\\n      \"action_name\": \"Search\",\\n      \"action\": {\\n        \"tool_input\": \"weather in Los Angeles\"\\n      }\\n    },\\n    {\\n      \"action_name\": \"Search\",\\n      \"action\": {\\n        \"tool_input\": \"weather in San Francisco\"\\n      }\\n    }\\n  ]\\n}'}\nFunction: Partly cloudy this evening, then becoming cloudy after midnight. Low 53F. Winds WSW at 10 to 20 mph. Humidity83%."
+      ]
+    }
+    [llm/end] [1:chain:AgentExecutor > 5:llm:ChatOpenAI] [2.33s] Exiting LLM run with output:
+    {
+      "generations": [
+        [
+          {
+            "text": "The weather in Los Angeles is mostly cloudy with a high of 76°F and a humidity of 59%. The weather in San Francisco is partly cloudy in the evening, becoming cloudy after midnight, with a low of 53°F and a humidity of 83%.",
+            "generation_info": null,
+            "message": {
+              "content": "The weather in Los Angeles is mostly cloudy with a high of 76°F and a humidity of 59%. The weather in San Francisco is partly cloudy in the evening, becoming cloudy after midnight, with a low of 53°F and a humidity of 83%.",
+              "additional_kwargs": {},
+              "example": false
+            }
+          }
+        ]
+      ],
+      "llm_output": {
+        "token_usage": {
+          "prompt_tokens": 307,
+          "completion_tokens": 54,
+          "total_tokens": 361
+        },
+        "model_name": "gpt-3.5-turbo-0613"
+      },
+      "run": null
+    }
+    [chain/end] [1:chain:AgentExecutor] [6.37s] Exiting Chain run with output:
+    {
+      "output": "The weather in Los Angeles is mostly cloudy with a high of 76°F and a humidity of 59%. The weather in San Francisco is partly cloudy in the evening, becoming cloudy after midnight, with a low of 53°F and a humidity of 83%."
+    }
+
+
+
+
+
+    'The weather in Los Angeles is mostly cloudy with a high of 76°F and a humidity of 59%. The weather in San Francisco is partly cloudy in the evening, becoming cloudy after midnight, with a low of 53°F and a humidity of 83%.'
+
+
+Configuring max iteration behavior
+To make sure that our agent doesn't get stuck in excessively long loops, we can set max_iterations. We can also set an early stopping method, which will determine our agent's behavior once the number of max iterations is hit. By default, the early stopping uses method force which just returns that constant string. Alternatively, you could specify method generate which then does one FINAL pass through the LLM to generate an output.
+
+mrkl = initialize_agent(
+    tools,
+    llm,
+    agent=AgentType.OPENAI_FUNCTIONS,
+    verbose=True,
+    max_iterations=2,
+    early_stopping_method="generate",
+)
+
+mrkl.run("What is the weather in NYC today, yesterday, and the day before?")
+
+
+    [chain/start] [1:chain:AgentExecutor] Entering Chain run with input:
+    {
+      "input": "What is the weather in NYC today, yesterday, and the day before?"
+    }
+    [llm/start] [1:chain:AgentExecutor > 2:llm:ChatOpenAI] Entering LLM run with input:
+    {
+      "prompts": [
+        "System: You are a helpful AI assistant.\nHuman: What is the weather in NYC today, yesterday, and the day before?"
+      ]
+    }
+    [llm/end] [1:chain:AgentExecutor > 2:llm:ChatOpenAI] [1.27s] Exiting LLM run with output:
+    {
+      "generations": [
+        [
+          {
+            "text": "",
+            "generation_info": null,
+            "message": {
+              "lc": 1,
+              "type": "constructor",
+              "id": [
+                "langchain",
+                "schema",
+                "messages",
+                "AIMessage"
+              ],
+              "kwargs": {
+                "content": "",
+                "additional_kwargs": {
+                  "function_call": {
+                    "name": "Search",
+                    "arguments": "{\n  \"query\": \"weather in NYC today\"\n}"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      ],
+      "llm_output": {
+        "token_usage": {
+          "prompt_tokens": 79,
+          "completion_tokens": 17,
+          "total_tokens": 96
+        },
+        "model_name": "gpt-3.5-turbo-0613"
+      },
+      "run": null
+    }
+    [tool/start] [1:chain:AgentExecutor > 3:tool:Search] Entering Tool run with input:
+    "{'query': 'weather in NYC today'}"
+    [tool/end] [1:chain:AgentExecutor > 3:tool:Search] [3.84s] Exiting Tool run with output:
+    "10:00 am · Feels Like85° · WindSE 4 mph · Humidity78% · UV Index3 of 11 · Cloud Cover81% · Rain Amount0 in ..."
+    [llm/start] [1:chain:AgentExecutor > 4:llm:ChatOpenAI] Entering LLM run with input:
+    {
+      "prompts": [
+        "System: You are a helpful AI assistant.\nHuman: What is the weather in NYC today, yesterday, and the day before?\nAI: {'name': 'Search', 'arguments': '{\\n  \"query\": \"weather in NYC today\"\\n}'}\nFunction: 10:00 am · Feels Like85° · WindSE 4 mph · Humidity78% · UV Index3 of 11 · Cloud Cover81% · Rain Amount0 in ..."
+      ]
+    }
+    [llm/end] [1:chain:AgentExecutor > 4:llm:ChatOpenAI] [1.24s] Exiting LLM run with output:
+    {
+      "generations": [
+        [
+          {
+            "text": "",
+            "generation_info": null,
+            "message": {
+              "lc": 1,
+              "type": "constructor",
+              "id": [
+                "langchain",
+                "schema",
+                "messages",
+                "AIMessage"
+              ],
+              "kwargs": {
+                "content": "",
+                "additional_kwargs": {
+                  "function_call": {
+                    "name": "Search",
+                    "arguments": "{\n  \"query\": \"weather in NYC yesterday\"\n}"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      ],
+      "llm_output": {
+        "token_usage": {
+          "prompt_tokens": 142,
+          "completion_tokens": 17,
+          "total_tokens": 159
+        },
+        "model_name": "gpt-3.5-turbo-0613"
+      },
+      "run": null
+    }
+    [tool/start] [1:chain:AgentExecutor > 5:tool:Search] Entering Tool run with input:
+    "{'query': 'weather in NYC yesterday'}"
+    [tool/end] [1:chain:AgentExecutor > 5:tool:Search] [1.15s] Exiting Tool run with output:
+    "New York Temperature Yesterday. Maximum temperature yesterday: 81 °F (at 1:51 pm) Minimum temperature yesterday: 72 °F (at 7:17 pm) Average temperature ..."
+    [llm/start] [1:llm:ChatOpenAI] Entering LLM run with input:
+    {
+      "prompts": [
+        "System: You are a helpful AI assistant.\nHuman: What is the weather in NYC today, yesterday, and the day before?\nAI: {'name': 'Search', 'arguments': '{\\n  \"query\": \"weather in NYC today\"\\n}'}\nFunction: 10:00 am · Feels Like85° · WindSE 4 mph · Humidity78% · UV Index3 of 11 · Cloud Cover81% · Rain Amount0 in ...\nAI: {'name': 'Search', 'arguments': '{\\n  \"query\": \"weather in NYC yesterday\"\\n}'}\nFunction: New York Temperature Yesterday. Maximum temperature yesterday: 81 °F (at 1:51 pm) Minimum temperature yesterday: 72 °F (at 7:17 pm) Average temperature ..."
+      ]
+    }
+    [llm/end] [1:llm:ChatOpenAI] [2.68s] Exiting LLM run with output:
+    {
+      "generations": [
+        [
+          {
+            "text": "Today in NYC, the weather is currently 85°F with a southeast wind of 4 mph. The humidity is at 78% and there is 81% cloud cover. There is no rain expected today.\n\nYesterday in NYC, the maximum temperature was 81°F at 1:51 pm, and the minimum temperature was 72°F at 7:17 pm.\n\nFor the day before yesterday, I do not have the specific weather information.",
+            "generation_info": null,
+            "message": {
+              "lc": 1,
+              "type": "constructor",
+              "id": [
+                "langchain",
+                "schema",
+                "messages",
+                "AIMessage"
+              ],
+              "kwargs": {
+                "content": "Today in NYC, the weather is currently 85°F with a southeast wind of 4 mph. The humidity is at 78% and there is 81% cloud cover. There is no rain expected today.\n\nYesterday in NYC, the maximum temperature was 81°F at 1:51 pm, and the minimum temperature was 72°F at 7:17 pm.\n\nFor the day before yesterday, I do not have the specific weather information.",
+                "additional_kwargs": {}
+              }
+            }
+          }
+        ]
+      ],
+      "llm_output": {
+        "token_usage": {
+          "prompt_tokens": 160,
+          "completion_tokens": 91,
+          "total_tokens": 251
+        },
+        "model_name": "gpt-3.5-turbo-0613"
+      },
+      "run": null
+    }
+    [chain/end] [1:chain:AgentExecutor] [10.18s] Exiting Chain run with output:
+    {
+      "output": "Today in NYC, the weather is currently 85°F with a southeast wind of 4 mph. The humidity is at 78% and there is 81% cloud cover. There is no rain expected today.\n\nYesterday in NYC, the maximum temperature was 81°F at 1:51 pm, and the minimum temperature was 72°F at 7:17 pm.\n\nFor the day before yesterday, I do not have the specific weather information."
+    }
+
+
+
+
+
+    'Today in NYC, the weather is currently 85°F with a southeast wind of 4 mph. The humidity is at 78% and there is 81% cloud cover. There is no rain expected today.\n\nYesterday in NYC, the maximum temperature was 81°F at 1:51 pm, and the minimum temperature was 72°F at 7:17 pm.\n\nFor the day before yesterday, I do not have the specific weather information.'
+
+
+Notice that we never get around to looking up the weather the day before yesterday, due to hitting our max_iterations limit.
+
+
+
+
+
+
+
+
+
+Plan and execute
+Plan and execute agents accomplish an objective by first planning what to do, then executing the sub tasks. This idea is largely inspired by BabyAGI and then the "Plan-and-Solve" paper.
+
+The planning is almost always done by an LLM.
+
+The execution is usually done by a separate agent (equipped with tools).
+
+Imports
+from langchain.chat_models import ChatOpenAI
+from langchain.experimental.plan_and_execute import PlanAndExecute, load_agent_executor, load_chat_planner
+from langchain.llms import OpenAI
+from langchain import SerpAPIWrapper
+from langchain.agents.tools import Tool
+from langchain import LLMMathChain
+
+
+Tools
+search = SerpAPIWrapper()
+llm = OpenAI(temperature=0)
+llm_math_chain = LLMMathChain.from_llm(llm=llm, verbose=True)
+tools = [
+    Tool(
+        name = "Search",
+        func=search.run,
+        description="useful for when you need to answer questions about current events"
+    ),
+    Tool(
+        name="Calculator",
+        func=llm_math_chain.run,
+        description="useful for when you need to answer questions about math"
+    ),
+]
+
+
+Planner, Executor, and Agent
+model = ChatOpenAI(temperature=0)
+
+planner = load_chat_planner(model)
+
+executor = load_agent_executor(model, tools, verbose=True)
+
+agent = PlanAndExecute(planner=planner, executor=executor, verbose=True)
+
+
+Run Example
+agent.run("Who is Leo DiCaprio's girlfriend? What is her current age raised to the 0.43 power?")
+
+
+    
+    
+    > Entering new PlanAndExecute chain...
+    steps=[Step(value="Search for Leo DiCaprio's girlfriend on the internet."), Step(value='Find her current age.'), Step(value='Raise her current age to the 0.43 power using a calculator or programming language.'), Step(value='Output the result.'), Step(value="Given the above steps taken, respond to the user's original question.\n\n")]
+    
+    > Entering new AgentExecutor chain...
+    Action:
+    ```
+    {
+      "action": "Search",
+      "action_input": "Who is Leo DiCaprio's girlfriend?"
+    }
+    ``` 
+    
+    
+    Observation: DiCaprio broke up with girlfriend Camila Morrone, 25, in the summer of 2022, after dating for four years. He's since been linked to another famous supermodel – Gigi Hadid. The power couple were first supposedly an item in September after being spotted getting cozy during a party at New York Fashion Week.
+    Thought:Based on the previous observation, I can provide the answer to the current objective. 
+    Action:
+    ```
+    {
+      "action": "Final Answer",
+      "action_input": "Leo DiCaprio is currently linked to Gigi Hadid."
+    }
+    ```
+    
+    
+    > Finished chain.
+    *****
+    
+    Step: Search for Leo DiCaprio's girlfriend on the internet.
+    
+    Response: Leo DiCaprio is currently linked to Gigi Hadid.
+    
+    > Entering new AgentExecutor chain...
+    Action:
+    ```
+    {
+      "action": "Search",
+      "action_input": "What is Gigi Hadid's current age?"
+    }
+    ```
+    
+    Observation: 28 years
+    Thought:Previous steps: steps=[(Step(value="Search for Leo DiCaprio's girlfriend on the internet."), StepResponse(response='Leo DiCaprio is currently linked to Gigi Hadid.'))]
+    
+    Current objective: value='Find her current age.'
+    
+    Action:
+    ```
+    {
+      "action": "Search",
+      "action_input": "What is Gigi Hadid's current age?"
+    }
+    ```
+    
+    
+    Observation: 28 years
+    Thought:Previous steps: steps=[(Step(value="Search for Leo DiCaprio's girlfriend on the internet."), StepResponse(response='Leo DiCaprio is currently linked to Gigi Hadid.')), (Step(value='Find her current age.'), StepResponse(response='28 years'))]
+    
+    Current objective: None
+    
+    Action:
+    ```
+    {
+      "action": "Final Answer",
+      "action_input": "Gigi Hadid's current age is 28 years."
+    }
+    ```
+    
+    
+    
+    > Finished chain.
+    *****
+    
+    Step: Find her current age.
+    
+    Response: Gigi Hadid's current age is 28 years.
+    
+    > Entering new AgentExecutor chain...
+    Action:
+    ```
+    {
+      "action": "Calculator",
+      "action_input": "28 ** 0.43"
+    }
+    ```
+    
+    
+    > Entering new LLMMathChain chain...
+    28 ** 0.43
+    ```text
+    28 ** 0.43
+    ```
+    ...numexpr.evaluate("28 ** 0.43")...
+    
+    Answer: 4.1906168361987195
+    > Finished chain.
+    
+    Observation: Answer: 4.1906168361987195
+    Thought:The next step is to provide the answer to the user's question.
+    
+    Action:
+    ```
+    {
+      "action": "Final Answer",
+      "action_input": "Gigi Hadid's current age raised to the 0.43 power is approximately 4.19."
+    }
+    ```
+    
+    
+    
+    > Finished chain.
+    *****
+    
+    Step: Raise her current age to the 0.43 power using a calculator or programming language.
+    
+    Response: Gigi Hadid's current age raised to the 0.43 power is approximately 4.19.
+    
+    > Entering new AgentExecutor chain...
+    Action:
+    ```
+    {
+      "action": "Final Answer",
+      "action_input": "The result is approximately 4.19."
+    }
+    ```
+    
+    
+    > Finished chain.
+    *****
+    
+    Step: Output the result.
+    
+    Response: The result is approximately 4.19.
+    
+    > Entering new AgentExecutor chain...
+    Action:
+    ```
+    {
+      "action": "Final Answer",
+      "action_input": "Gigi Hadid's current age raised to the 0.43 power is approximately 4.19."
+    }
+    ```
+    
+    
+    > Finished chain.
+    *****
+    
+    Step: Given the above steps taken, respond to the user's original question.
+    
+    
+    
+    Response: Gigi Hadid's current age raised to the 0.43 power is approximately 4.19.
+    > Finished chain.
+
+
+
+
+
+    "Gigi Hadid's current age raised to the 0.43 power is approximately 4.19."
+
+
+
+
+
+
+
+
+
+
+
+Add Memory to OpenAI Functions Agent
+This notebook goes over how to add memory to OpenAI Functions agent.
+
+from langchain import (
+    LLMMathChain,
+    OpenAI,
+    SerpAPIWrapper,
+    SQLDatabase,
+    SQLDatabaseChain,
+)
+from langchain.agents import initialize_agent, Tool
+from langchain.agents import AgentType
+from langchain.chat_models import ChatOpenAI
+
+    /Users/harrisonchase/.pyenv/versions/3.9.1/envs/langchain/lib/python3.9/site-packages/deeplake/util/check_latest_version.py:32: UserWarning: A newer version of deeplake (3.6.4) is available. It's recommended that you update to the latest version using `pip install -U deeplake`.
+      warnings.warn(
+
+
+llm = ChatOpenAI(temperature=0, model="gpt-3.5-turbo-0613")
+search = SerpAPIWrapper()
+llm_math_chain = LLMMathChain.from_llm(llm=llm, verbose=True)
+db = SQLDatabase.from_uri("sqlite:///../../../../../notebooks/Chinook.db")
+db_chain = SQLDatabaseChain.from_llm(llm, db, verbose=True)
+tools = [
+    Tool(
+        name="Search",
+        func=search.run,
+        description="useful for when you need to answer questions about current events. You should ask targeted questions",
+    ),
+    Tool(
+        name="Calculator",
+        func=llm_math_chain.run,
+        description="useful for when you need to answer questions about math",
+    ),
+    Tool(
+        name="FooBar-DB",
+        func=db_chain.run,
+        description="useful for when you need to answer questions about FooBar. Input should be in the form of a question containing full context",
+    ),
+]
+
+
+from langchain.prompts import MessagesPlaceholder
+from langchain.memory import ConversationBufferMemory
+
+agent_kwargs = {
+    "extra_prompt_messages": [MessagesPlaceholder(variable_name="memory")],
+}
+memory = ConversationBufferMemory(memory_key="memory", return_messages=True)
+
+
+agent = initialize_agent(
+    tools,
+    llm,
+    agent=AgentType.OPENAI_FUNCTIONS,
+    verbose=True,
+    agent_kwargs=agent_kwargs,
+    memory=memory,
+)
+
+agent.run("hi")
+
+    
+    
+    > Entering new  chain...
+    Hello! How can I assist you today?
+    
+    > Finished chain.
+
+
+
+
+
+    'Hello! How can I assist you today?'
+
+agent.run("my name is bob")
+
+    
+    
+    > Entering new  chain...
+    Nice to meet you, Bob! How can I help you today?
+    
+    > Finished chain.
+
+
+
+
+
+    'Nice to meet you, Bob! How can I help you today?'
+
+agent.run("whats my name")
+
+    
+    
+    > Entering new  chain...
+    Your name is Bob.
+    
+    > Finished chain.
+
+
+
+
+
+    'Your name is Bob.'
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Combine agents and vector stores
+This notebook covers how to combine agents and vectorstores. The use case for this is that you've ingested your data into a vectorstore and want to interact with it in an agentic manner.
+
+The recommended method for doing so is to create a RetrievalQA and then use that as a tool in the overall agent. Let's take a look at doing this below. You can do this with multiple different vectordbs, and use the agent as a way to route between them. There are two different ways of doing this - you can either let the agent use the vectorstores as normal tools, or you can set return_direct=True to really just use the agent as a router.
+
+Create the Vectorstore
+from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain.vectorstores import Chroma
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.llms import OpenAI
+from langchain.chains import RetrievalQA
+
+llm = OpenAI(temperature=0)
+
+from pathlib import Path
+
+relevant_parts = []
+for p in Path(".").absolute().parts:
+    relevant_parts.append(p)
+    if relevant_parts[-3:] == ["langchain", "docs", "modules"]:
+        break
+doc_path = str(Path(*relevant_parts) / "state_of_the_union.txt")
+
+
+from langchain.document_loaders import TextLoader
+
+loader = TextLoader(doc_path)
+documents = loader.load()
+text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
+texts = text_splitter.split_documents(documents)
+
+embeddings = OpenAIEmbeddings()
+docsearch = Chroma.from_documents(texts, embeddings, collection_name="state-of-union")
+
+
+    Running Chroma using direct local API.
+    Using DuckDB in-memory for database. Data will be transient.
+
+
+state_of_union = RetrievalQA.from_chain_type(
+    llm=llm, chain_type="stuff", retriever=docsearch.as_retriever()
+)
+
+
+from langchain.document_loaders import WebBaseLoader
+
+loader = WebBaseLoader("https://beta.ruff.rs/docs/faq/")
+
+docs = loader.load()
+ruff_texts = text_splitter.split_documents(docs)
+ruff_db = Chroma.from_documents(ruff_texts, embeddings, collection_name="ruff")
+ruff = RetrievalQA.from_chain_type(
+    llm=llm, chain_type="stuff", retriever=ruff_db.as_retriever()
+)
+
+
+    Running Chroma using direct local API.
+    Using DuckDB in-memory for database. Data will be transient.
+
+
+Create the Agent
+# Import things that are needed generically
+from langchain.agents import initialize_agent, Tool
+from langchain.agents import AgentType
+from langchain.tools import BaseTool
+from langchain.llms import OpenAI
+from langchain import LLMMathChain, SerpAPIWrapper
+
+tools = [
+    Tool(
+        name="State of Union QA System",
+        func=state_of_union.run,
+        description="useful for when you need to answer questions about the most recent state of the union address. Input should be a fully formed question.",
+    ),
+    Tool(
+        name="Ruff QA System",
+        func=ruff.run,
+        description="useful for when you need to answer questions about ruff (a python linter). Input should be a fully formed question.",
+    ),
+]
+
+
+# Construct the agent. We will use the default agent type here.
+# See documentation for a full list of options.
+agent = initialize_agent(
+    tools, llm, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True
+)
+
+
+agent.run(
+    "What did biden say about ketanji brown jackson in the state of the union address?"
+)
+
+
+    
+    
+    > Entering new AgentExecutor chain...
+     I need to find out what Biden said about Ketanji Brown Jackson in the State of the Union address.
+    Action: State of Union QA System
+    Action Input: What did Biden say about Ketanji Brown Jackson in the State of the Union address?
+    Observation:  Biden said that Jackson is one of the nation's top legal minds and that she will continue Justice Breyer's legacy of excellence.
+    Thought: I now know the final answer
+    Final Answer: Biden said that Jackson is one of the nation's top legal minds and that she will continue Justice Breyer's legacy of excellence.
+    
+    > Finished chain.
+
+
+
+
+
+    "Biden said that Jackson is one of the nation's top legal minds and that she will continue Justice Breyer's legacy of excellence."
+
+
+agent.run("Why use ruff over flake8?")
+
+    
+    
+    > Entering new AgentExecutor chain...
+     I need to find out the advantages of using ruff over flake8
+    Action: Ruff QA System
+    Action Input: What are the advantages of using ruff over flake8?
+    Observation:  Ruff can be used as a drop-in replacement for Flake8 when used (1) without or with a small number of plugins, (2) alongside Black, and (3) on Python 3 code. It also re-implements some of the most popular Flake8 plugins and related code quality tools natively, including isort, yesqa, eradicate, and most of the rules implemented in pyupgrade. Ruff also supports automatically fixing its own lint violations, which Flake8 does not.
+    Thought: I now know the final answer
+    Final Answer: Ruff can be used as a drop-in replacement for Flake8 when used (1) without or with a small number of plugins, (2) alongside Black, and (3) on Python 3 code. It also re-implements some of the most popular Flake8 plugins and related code quality tools natively, including isort, yesqa, eradicate, and most of the rules implemented in pyupgrade. Ruff also supports automatically fixing its own lint violations, which Flake8 does not.
+    
+    > Finished chain.
+
+
+
+
+
+    'Ruff can be used as a drop-in replacement for Flake8 when used (1) without or with a small number of plugins, (2) alongside Black, and (3) on Python 3 code. It also re-implements some of the most popular Flake8 plugins and related code quality tools natively, including isort, yesqa, eradicate, and most of the rules implemented in pyupgrade. Ruff also supports automatically fixing its own lint violations, which Flake8 does not.'
+
+
+Use the Agent solely as a router
+You can also set return_direct=True if you intend to use the agent as a router and just want to directly return the result of the RetrievalQAChain.
+
+Notice that in the above examples the agent did some extra work after querying the RetrievalQAChain. You can avoid that and just return the result directly.
+
+tools = [
+    Tool(
+        name="State of Union QA System",
+        func=state_of_union.run,
+        description="useful for when you need to answer questions about the most recent state of the union address. Input should be a fully formed question.",
+        return_direct=True,
+    ),
+    Tool(
+        name="Ruff QA System",
+        func=ruff.run,
+        description="useful for when you need to answer questions about ruff (a python linter). Input should be a fully formed question.",
+        return_direct=True,
+    ),
+]
+
+
+agent = initialize_agent(
+    tools, llm, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True
+)
+
+
+agent.run(
+    "What did biden say about ketanji brown jackson in the state of the union address?"
+)
+
+
+    
+    
+    > Entering new AgentExecutor chain...
+     I need to find out what Biden said about Ketanji Brown Jackson in the State of the Union address.
+    Action: State of Union QA System
+    Action Input: What did Biden say about Ketanji Brown Jackson in the State of the Union address?
+    Observation:  Biden said that Jackson is one of the nation's top legal minds and that she will continue Justice Breyer's legacy of excellence.
+    
+    
+    > Finished chain.
+
+
+
+
+
+    " Biden said that Jackson is one of the nation's top legal minds and that she will continue Justice Breyer's legacy of excellence."
+
+
+agent.run("Why use ruff over flake8?")
+
+    
+    
+    > Entering new AgentExecutor chain...
+     I need to find out the advantages of using ruff over flake8
+    Action: Ruff QA System
+    Action Input: What are the advantages of using ruff over flake8?
+    Observation:  Ruff can be used as a drop-in replacement for Flake8 when used (1) without or with a small number of plugins, (2) alongside Black, and (3) on Python 3 code. It also re-implements some of the most popular Flake8 plugins and related code quality tools natively, including isort, yesqa, eradicate, and most of the rules implemented in pyupgrade. Ruff also supports automatically fixing its own lint violations, which Flake8 does not.
+    
+    
+    > Finished chain.
+
+
+
+
+
+    ' Ruff can be used as a drop-in replacement for Flake8 when used (1) without or with a small number of plugins, (2) alongside Black, and (3) on Python 3 code. It also re-implements some of the most popular Flake8 plugins and related code quality tools natively, including isort, yesqa, eradicate, and most of the rules implemented in pyupgrade. Ruff also supports automatically fixing its own lint violations, which Flake8 does not.'
+
+
+Multi-Hop vectorstore reasoning
+Because vectorstores are easily usable as tools in agents, it is easy to use answer multi-hop questions that depend on vectorstores using the existing agent framework
+
+tools = [
+    Tool(
+        name="State of Union QA System",
+        func=state_of_union.run,
+        description="useful for when you need to answer questions about the most recent state of the union address. Input should be a fully formed question, not referencing any obscure pronouns from the conversation before.",
+    ),
+    Tool(
+        name="Ruff QA System",
+        func=ruff.run,
+        description="useful for when you need to answer questions about ruff (a python linter). Input should be a fully formed question, not referencing any obscure pronouns from the conversation before.",
+    ),
+]
+
+
+# Construct the agent. We will use the default agent type here.
+# See documentation for a full list of options.
+agent = initialize_agent(
+    tools, llm, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True
+)
+
+
+agent.run(
+    "What tool does ruff use to run over Jupyter Notebooks? Did the president mention that tool in the state of the union?"
+)
+
+
+    
+    
+    > Entering new AgentExecutor chain...
+     I need to find out what tool ruff uses to run over Jupyter Notebooks, and if the president mentioned it in the state of the union.
+    Action: Ruff QA System
+    Action Input: What tool does ruff use to run over Jupyter Notebooks?
+    Observation:  Ruff is integrated into nbQA, a tool for running linters and code formatters over Jupyter Notebooks. After installing ruff and nbqa, you can run Ruff over a notebook like so: > nbqa ruff Untitled.html
+    Thought: I now need to find out if the president mentioned this tool in the state of the union.
+    Action: State of Union QA System
+    Action Input: Did the president mention nbQA in the state of the union?
+    Observation:  No, the president did not mention nbQA in the state of the union.
+    Thought: I now know the final answer.
+    Final Answer: No, the president did not mention nbQA in the state of the union.
+    
+    > Finished chain.
+
+
+
+
+
+    'No, the president did not mention nbQA in the state of the union.'
+
+
+
+
+
+
+
+
+
+
+Async API
+LangChain provides async support for Agents by leveraging the asyncio library.
+
+Async methods are currently supported for the following Tools: GoogleSerperAPIWrapper, SerpAPIWrapper and LLMMathChain. Async support for other agent tools are on the roadmap.
+
+For Tools that have a coroutine implemented (the three mentioned above), the AgentExecutor will await them directly. Otherwise, the AgentExecutor will call the Tool's func via asyncio.get_event_loop().run_in_executor to avoid blocking the main runloop.
+
+You can use arun to call an AgentExecutor asynchronously.
+
+Serial vs. Concurrent Execution
+In this example, we kick off agents to answer some questions serially vs. concurrently. You can see that concurrent execution significantly speeds this up.
+
+import asyncio
+import time
+
+from langchain.agents import initialize_agent, load_tools
+from langchain.agents import AgentType
+from langchain.llms import OpenAI
+from langchain.callbacks.stdout import StdOutCallbackHandler
+from langchain.callbacks.tracers import LangChainTracer
+from aiohttp import ClientSession
+
+questions = [
+    "Who won the US Open men's final in 2019? What is his age raised to the 0.334 power?",
+    "Who is Olivia Wilde's boyfriend? What is his current age raised to the 0.23 power?",
+    "Who won the most recent formula 1 grand prix? What is their age raised to the 0.23 power?",
+    "Who won the US Open women's final in 2019? What is her age raised to the 0.34 power?",
+    "Who is Beyonce's husband? What is his age raised to the 0.19 power?",
+]
+
+
+llm = OpenAI(temperature=0)
+tools = load_tools(["google-serper", "llm-math"], llm=llm)
+agent = initialize_agent(
+    tools, llm, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True
+)
+
+s = time.perf_counter()
+for q in questions:
+    agent.run(q)
+elapsed = time.perf_counter() - s
+print(f"Serial executed in {elapsed:0.2f} seconds.")
+
+
+    
+    
+    > Entering new AgentExecutor chain...
+     I need to find out who won the US Open men's final in 2019 and then calculate his age raised to the 0.334 power.
+    Action: Google Serper
+    Action Input: "Who won the US Open men's final in 2019?"
+    Observation: Rafael Nadal defeated Daniil Medvedev in the final, 7–5, 6–3, 5–7, 4–6, 6–4 to win the men's singles tennis title at the 2019 US Open. It was his fourth US ... Draw: 128 (16 Q / 8 WC). Champion: Rafael Nadal. Runner-up: Daniil Medvedev. Score: 7–5, 6–3, 5–7, 4–6, 6–4. Bianca Andreescu won the women's singles title, defeating Serena Williams in straight sets in the final, becoming the first Canadian to win a Grand Slam singles ... Rafael Nadal won his 19th career Grand Slam title, and his fourth US Open crown, by surviving an all-time comback effort from Daniil ... Rafael Nadal beats Daniil Medvedev in US Open final to claim 19th major title. World No2 claims 7-5, 6-3, 5-7, 4-6, 6-4 victory over Russian ... Rafael Nadal defeated Daniil Medvedev in the men's singles final of the U.S. Open on Sunday. Rafael Nadal survived. The 33-year-old defeated Daniil Medvedev in the final of the 2019 U.S. Open to earn his 19th Grand Slam title Sunday ... NEW YORK -- Rafael Nadal defeated Daniil Medvedev in an epic five-set match, 7-5, 6-3, 5-7, 4-6, 6-4 to win the men's singles title at the ... Nadal previously won the U.S. Open three times, most recently in 2017. Ahead of the match, Nadal said he was “super happy to be back in the ... Watch the full match between Daniil Medvedev and Rafael ... Duration: 4:47:32. Posted: Mar 20, 2020. US Open 2019: Rafael Nadal beats Daniil Medvedev · Updated: Sep. 08, 2019, 11:11 p.m. |; Published: Sep · Published: Sep. 08, 2019, 10:06 p.m.. 26. US Open ...
+    Thought: I now know that Rafael Nadal won the US Open men's final in 2019 and he is 33 years old.
+    Action: Calculator
+    Action Input: 33^0.334
+    Observation: Answer: 3.215019829667466
+    Thought: I now know the final answer.
+    Final Answer: Rafael Nadal won the US Open men's final in 2019 and his age raised to the 0.334 power is 3.215019829667466.
+    
+    > Finished chain.
+    
+    
+    > Entering new AgentExecutor chain...
+     I need to find out who Olivia Wilde's boyfriend is and then calculate his age raised to the 0.23 power.
+    Action: Google Serper
+    Action Input: "Olivia Wilde boyfriend"
+    Observation: Sudeikis and Wilde's relationship ended in November 2020. Wilde was publicly served with court documents regarding child custody while she was presenting Don't Worry Darling at CinemaCon 2022. In January 2021, Wilde began dating singer Harry Styles after meeting during the filming of Don't Worry Darling.
+    Thought: I need to find out Harry Styles' age.
+    Action: Google Serper
+    Action Input: "Harry Styles age"
+    Observation: 29 years
+    Thought: I need to calculate 29 raised to the 0.23 power.
+    Action: Calculator
+    Action Input: 29^0.23
+    Observation: Answer: 2.169459462491557
+    Thought: I now know the final answer.
+    Final Answer: Harry Styles is Olivia Wilde's boyfriend and his current age raised to the 0.23 power is 2.169459462491557.
+    
+    > Finished chain.
+    
+    
+    > Entering new AgentExecutor chain...
+     I need to find out who won the most recent grand prix and then calculate their age raised to the 0.23 power.
+    Action: Google Serper
+    Action Input: "who won the most recent formula 1 grand prix"
+    Observation: Max Verstappen won his first Formula 1 world title on Sunday after the championship was decided by a last-lap overtake of his rival Lewis Hamilton in the Abu Dhabi Grand Prix. Dec 12, 2021
+    Thought: I need to find out Max Verstappen's age
+    Action: Google Serper
+    Action Input: "Max Verstappen age"
+    Observation: 25 years
+    Thought: I need to calculate 25 raised to the 0.23 power
+    Action: Calculator
+    Action Input: 25^0.23
+    Observation: Answer: 2.096651272316035
+    Thought: I now know the final answer
+    Final Answer: Max Verstappen, aged 25, won the most recent Formula 1 grand prix and his age raised to the 0.23 power is 2.096651272316035.
+    
+    > Finished chain.
+    
+    
+    > Entering new AgentExecutor chain...
+     I need to find out who won the US Open women's final in 2019 and then calculate her age raised to the 0.34 power.
+    Action: Google Serper
+    Action Input: "US Open women's final 2019 winner"
+    Observation: WHAT HAPPENED: #SheTheNorth? She the champion. Nineteen-year-old Canadian Bianca Andreescu sealed her first Grand Slam title on Saturday, downing 23-time major champion Serena Williams in the 2019 US Open women's singles final, 6-3, 7-5. Sep 7, 2019
+    Thought: I now need to calculate her age raised to the 0.34 power.
+    Action: Calculator
+    Action Input: 19^0.34
+    Observation: Answer: 2.7212987634680084
+    Thought: I now know the final answer.
+    Final Answer: Nineteen-year-old Canadian Bianca Andreescu won the US Open women's final in 2019 and her age raised to the 0.34 power is 2.7212987634680084.
+    
+    > Finished chain.
+    
+    
+    > Entering new AgentExecutor chain...
+     I need to find out who Beyonce's husband is and then calculate his age raised to the 0.19 power.
+    Action: Google Serper
+    Action Input: "Who is Beyonce's husband?"
+    Observation: Jay-Z
+    Thought: I need to find out Jay-Z's age
+    Action: Google Serper
+    Action Input: "How old is Jay-Z?"
+    Observation: 53 years
+    Thought: I need to calculate 53 raised to the 0.19 power
+    Action: Calculator
+    Action Input: 53^0.19
+    Observation: Answer: 2.12624064206896
+    Thought: I now know the final answer
+    Final Answer: Jay-Z is Beyonce's husband and his age raised to the 0.19 power is 2.12624064206896.
+    
+    > Finished chain.
+    Serial executed in 89.97 seconds.
+
+
+llm = OpenAI(temperature=0)
+tools = load_tools(["google-serper", "llm-math"], llm=llm)
+agent = initialize_agent(
+    tools, llm, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True
+)
+
+s = time.perf_counter()
+# If running this outside of Jupyter, use asyncio.run or loop.run_until_complete
+tasks = [agent.arun(q) for q in questions]
+await asyncio.gather(*tasks)
+elapsed = time.perf_counter() - s
+print(f"Concurrent executed in {elapsed:0.2f} seconds.")
+
+
+    
+    
+    > Entering new AgentExecutor chain...
+    
+    
+    > Entering new AgentExecutor chain...
+    
+    
+    > Entering new AgentExecutor chain...
+    
+    
+    > Entering new AgentExecutor chain...
+    
+    
+    > Entering new AgentExecutor chain...
+     I need to find out who Olivia Wilde's boyfriend is and then calculate his age raised to the 0.23 power.
+    Action: Google Serper
+    Action Input: "Olivia Wilde boyfriend" I need to find out who Beyonce's husband is and then calculate his age raised to the 0.19 power.
+    Action: Google Serper
+    Action Input: "Who is Beyonce's husband?" I need to find out who won the most recent formula 1 grand prix and then calculate their age raised to the 0.23 power.
+    Action: Google Serper
+    Action Input: "most recent formula 1 grand prix winner" I need to find out who won the US Open men's final in 2019 and then calculate his age raised to the 0.334 power.
+    Action: Google Serper
+    Action Input: "Who won the US Open men's final in 2019?" I need to find out who won the US Open women's final in 2019 and then calculate her age raised to the 0.34 power.
+    Action: Google Serper
+    Action Input: "US Open women's final 2019 winner"
+    Observation: Sudeikis and Wilde's relationship ended in November 2020. Wilde was publicly served with court documents regarding child custody while she was presenting Don't Worry Darling at CinemaCon 2022. In January 2021, Wilde began dating singer Harry Styles after meeting during the filming of Don't Worry Darling.
+    Thought:
+    Observation: Jay-Z
+    Thought:
+    Observation: Rafael Nadal defeated Daniil Medvedev in the final, 7–5, 6–3, 5–7, 4–6, 6–4 to win the men's singles tennis title at the 2019 US Open. It was his fourth US ... Draw: 128 (16 Q / 8 WC). Champion: Rafael Nadal. Runner-up: Daniil Medvedev. Score: 7–5, 6–3, 5–7, 4–6, 6–4. Bianca Andreescu won the women's singles title, defeating Serena Williams in straight sets in the final, becoming the first Canadian to win a Grand Slam singles ... Rafael Nadal won his 19th career Grand Slam title, and his fourth US Open crown, by surviving an all-time comback effort from Daniil ... Rafael Nadal beats Daniil Medvedev in US Open final to claim 19th major title. World No2 claims 7-5, 6-3, 5-7, 4-6, 6-4 victory over Russian ... Rafael Nadal defeated Daniil Medvedev in the men's singles final of the U.S. Open on Sunday. Rafael Nadal survived. The 33-year-old defeated Daniil Medvedev in the final of the 2019 U.S. Open to earn his 19th Grand Slam title Sunday ... NEW YORK -- Rafael Nadal defeated Daniil Medvedev in an epic five-set match, 7-5, 6-3, 5-7, 4-6, 6-4 to win the men's singles title at the ... Nadal previously won the U.S. Open three times, most recently in 2017. Ahead of the match, Nadal said he was “super happy to be back in the ... Watch the full match between Daniil Medvedev and Rafael ... Duration: 4:47:32. Posted: Mar 20, 2020. US Open 2019: Rafael Nadal beats Daniil Medvedev · Updated: Sep. 08, 2019, 11:11 p.m. |; Published: Sep · Published: Sep. 08, 2019, 10:06 p.m.. 26. US Open ...
+    Thought:
+    Observation: WHAT HAPPENED: #SheTheNorth? She the champion. Nineteen-year-old Canadian Bianca Andreescu sealed her first Grand Slam title on Saturday, downing 23-time major champion Serena Williams in the 2019 US Open women's singles final, 6-3, 7-5. Sep 7, 2019
+    Thought:
+    Observation: Lewis Hamilton holds the record for the most race wins in Formula One history, with 103 wins to date. Michael Schumacher, the previous record holder, ... Michael Schumacher (top left) and Lewis Hamilton (top right) have each won the championship a record seven times during their careers, while Sebastian Vettel ( ... Grand Prix, Date, Winner, Car, Laps, Time. Bahrain, 05 Mar 2023, Max Verstappen VER, Red Bull Racing Honda RBPT, 57, 1:33:56.736. Saudi Arabia, 19 Mar 2023 ... The Red Bull driver Max Verstappen of the Netherlands celebrated winning his first Formula 1 world title at the Abu Dhabi Grand Prix. Perez wins sprint as Verstappen, Russell clash. Red Bull's Sergio Perez won the first sprint of the 2023 Formula One season after catching and passing Charles ... The most successful driver in the history of F1 is Lewis Hamilton. The man from Stevenage has won 103 Grands Prix throughout his illustrious career and is still ... Lewis Hamilton: 103. Max Verstappen: 37. Michael Schumacher: 91. Fernando Alonso: 32. Max Verstappen and Sergio Perez will race in a very different-looking Red Bull this weekend after the team unveiled a striking special livery for the Miami GP. Lewis Hamilton holds the record of most victories with 103, ahead of Michael Schumacher (91) and Sebastian Vettel (53). Schumacher also holds the record for the ... Lewis Hamilton holds the record for the most race wins in Formula One history, with 103 wins to date. Michael Schumacher, the previous record holder, is second ...
+    Thought: I need to find out Harry Styles' age.
+    Action: Google Serper
+    Action Input: "Harry Styles age" I need to find out Jay-Z's age
+    Action: Google Serper
+    Action Input: "How old is Jay-Z?" I now know that Rafael Nadal won the US Open men's final in 2019 and he is 33 years old.
+    Action: Calculator
+    Action Input: 33^0.334 I now need to calculate her age raised to the 0.34 power.
+    Action: Calculator
+    Action Input: 19^0.34
+    Observation: 29 years
+    Thought:
+    Observation: 53 years
+    Thought: Max Verstappen won the most recent Formula 1 grand prix.
+    Action: Calculator
+    Action Input: Max Verstappen's age (23) raised to the 0.23 power
+    Observation: Answer: 2.7212987634680084
+    Thought:
+    Observation: Answer: 3.215019829667466
+    Thought: I need to calculate 29 raised to the 0.23 power.
+    Action: Calculator
+    Action Input: 29^0.23 I need to calculate 53 raised to the 0.19 power
+    Action: Calculator
+    Action Input: 53^0.19
+    Observation: Answer: 2.0568252837687546
+    Thought:
+    Observation: Answer: 2.169459462491557
+    Thought:
+    > Finished chain.
+    
+    > Finished chain.
+    
+    Observation: Answer: 2.12624064206896
+    Thought:
+    > Finished chain.
+    
+    > Finished chain.
+    
+    > Finished chain.
+    Concurrent executed in 17.52 seconds.
+
+
+
+
+
+
+
+
+
+
+
+
+Custom functions with OpenAI Functions Agent
+This notebook goes through how to integrate custom functions with OpenAI Functions agent.
+
+Install libraries which are required to run this example notebook
+
+pip install -q openai langchain yfinance
+
+Define custom functions
+import yfinance as yf
+from datetime import datetime, timedelta
+
+
+def get_current_stock_price(ticker):
+    """Method to get current stock price"""
+
+    ticker_data = yf.Ticker(ticker)
+    recent = ticker_data.history(period="1d")
+    return {"price": recent.iloc[0]["Close"], "currency": ticker_data.info["currency"]}
+
+
+def get_stock_performance(ticker, days):
+    """Method to get stock price change in percentage"""
+
+    past_date = datetime.today() - timedelta(days=days)
+    ticker_data = yf.Ticker(ticker)
+    history = ticker_data.history(start=past_date)
+    old_price = history.iloc[0]["Close"]
+    current_price = history.iloc[-1]["Close"]
+    return {"percent_change": ((current_price - old_price) / old_price) * 100}
+
+
+get_current_stock_price("MSFT")
+
+    {'price': 334.57000732421875, 'currency': 'USD'}
+
+get_stock_performance("MSFT", 30)
+
+    {'percent_change': 1.014466941163018}
+
+Make custom tools
+from typing import Type
+from pydantic import BaseModel, Field
+from langchain.tools import BaseTool
+
+
+class CurrentStockPriceInput(BaseModel):
+    """Inputs for get_current_stock_price"""
+
+    ticker: str = Field(description="Ticker symbol of the stock")
+
+
+class CurrentStockPriceTool(BaseTool):
+    name = "get_current_stock_price"
+    description = """
+        Useful when you want to get current stock price.
+        You should enter the stock ticker symbol recognized by the yahoo finance
+        """
+    args_schema: Type[BaseModel] = CurrentStockPriceInput
+
+    def _run(self, ticker: str):
+        price_response = get_current_stock_price(ticker)
+        return price_response
+
+    def _arun(self, ticker: str):
+        raise NotImplementedError("get_current_stock_price does not support async")
+
+
+class StockPercentChangeInput(BaseModel):
+    """Inputs for get_stock_performance"""
+
+    ticker: str = Field(description="Ticker symbol of the stock")
+    days: int = Field(description="Timedelta days to get past date from current date")
+
+
+class StockPerformanceTool(BaseTool):
+    name = "get_stock_performance"
+    description = """
+        Useful when you want to check performance of the stock.
+        You should enter the stock ticker symbol recognized by the yahoo finance.
+        You should enter days as number of days from today from which performance needs to be check.
+        output will be the change in the stock price represented as a percentage.
+        """
+    args_schema: Type[BaseModel] = StockPercentChangeInput
+
+    def _run(self, ticker: str, days: int):
+        response = get_stock_performance(ticker, days)
+        return response
+
+    def _arun(self, ticker: str):
+        raise NotImplementedError("get_stock_performance does not support async")
+
+
+Create Agent
+from langchain.agents import AgentType
+from langchain.chat_models import ChatOpenAI
+from langchain.agents import initialize_agent
+
+llm = ChatOpenAI(model="gpt-3.5-turbo-0613", temperature=0)
+
+tools = [CurrentStockPriceTool(), StockPerformanceTool()]
+
+agent = initialize_agent(tools, llm, agent=AgentType.OPENAI_FUNCTIONS, verbose=True)
+
+
+agent.run(
+    "What is the current price of Microsoft stock? How it has performed over past 6 months?"
+)
+
+
+    
+    
+    > Entering new  chain...
+    
+    Invoking: `get_current_stock_price` with `{'ticker': 'MSFT'}`
+    
+    
+    {'price': 334.57000732421875, 'currency': 'USD'}
+    Invoking: `get_stock_performance` with `{'ticker': 'MSFT', 'days': 180}`
+    
+    
+    {'percent_change': 40.163963297187905}The current price of Microsoft stock is $334.57 USD. 
+    
+    Over the past 6 months, Microsoft stock has performed well with a 40.16% increase in its price.
+    
+    > Finished chain.
+
+
+
+
+
+    'The current price of Microsoft stock is $334.57 USD. \n\nOver the past 6 months, Microsoft stock has performed well with a 40.16% increase in its price.'
+
+
+agent.run("Give me recent stock prices of Google and Meta?")
+
+    
+    
+    > Entering new  chain...
+    
+    Invoking: `get_current_stock_price` with `{'ticker': 'GOOGL'}`
+    
+    
+    {'price': 118.33000183105469, 'currency': 'USD'}
+    Invoking: `get_current_stock_price` with `{'ticker': 'META'}`
+    
+    
+    {'price': 287.04998779296875, 'currency': 'USD'}The recent stock price of Google (GOOGL) is $118.33 USD and the recent stock price of Meta (META) is $287.05 USD.
+    
+    > Finished chain.
+
+
+
+
+
+    'The recent stock price of Google (GOOGL) is $118.33 USD and the recent stock price of Meta (META) is $287.05 USD.'
+
+
+agent.run(
+    "In the past 3 months, which stock between Microsoft and Google has performed the best?"
+)
+
+
+    
+    
+    > Entering new  chain...
+    
+    Invoking: `get_stock_performance` with `{'ticker': 'MSFT', 'days': 90}`
+    
+    
+    {'percent_change': 18.043096235165596}
+    Invoking: `get_stock_performance` with `{'ticker': 'GOOGL', 'days': 90}`
+    
+    
+    {'percent_change': 17.286155760642853}In the past 3 months, Microsoft (MSFT) has performed better than Google (GOOGL). Microsoft's stock price has increased by 18.04% while Google's stock price has increased by 17.29%.
+    
+    > Finished chain.
+
+
+
+
+
+    "In the past 3 months, Microsoft (MSFT) has performed better than Google (GOOGL). Microsoft's stock price has increased by 18.04% while Google's stock price has increased by 17.29%."
+
+
+
+
+
+
+
+
+
+
+
+
+Custom agent
+This notebook goes through how to create your own custom agent.
+
+An agent consists of two parts:
+
+- Tools: The tools the agent has available to use.
+- The agent class itself: this decides which action to take.
+    
+    
+
+In this notebook we walk through how to create a custom agent.
+
+from langchain.agents import Tool, AgentExecutor, BaseSingleActionAgent
+from langchain import OpenAI, SerpAPIWrapper
+
+
+search = SerpAPIWrapper()
+tools = [
+    Tool(
+        name="Search",
+        func=search.run,
+        description="useful for when you need to answer questions about current events",
+        return_direct=True,
+    )
+]
+
+
+from typing import List, Tuple, Any, Union
+from langchain.schema import AgentAction, AgentFinish
+
+
+class FakeAgent(BaseSingleActionAgent):
+    """Fake Custom Agent."""
+
+    @property
+    def input_keys(self):
+        return ["input"]
+
+    def plan(
+        self, intermediate_steps: List[Tuple[AgentAction, str]], **kwargs: Any
+    ) -> Union[AgentAction, AgentFinish]:
+        """Given input, decided what to do.
+
+        Args:
+            intermediate_steps: Steps the LLM has taken to date,
+                along with observations
+            **kwargs: User inputs.
+
+        Returns:
+            Action specifying what tool to use.
+        """
+        return AgentAction(tool="Search", tool_input=kwargs["input"], log="")
+
+    async def aplan(
+        self, intermediate_steps: List[Tuple[AgentAction, str]], **kwargs: Any
+    ) -> Union[AgentAction, AgentFinish]:
+        """Given input, decided what to do.
+
+        Args:
+            intermediate_steps: Steps the LLM has taken to date,
+                along with observations
+            **kwargs: User inputs.
+
+        Returns:
+            Action specifying what tool to use.
+        """
+        return AgentAction(tool="Search", tool_input=kwargs["input"], log="")
+
+
+agent = FakeAgent()
+
+agent_executor = AgentExecutor.from_agent_and_tools(
+    agent=agent, tools=tools, verbose=True
+)
+
+agent_executor.run("How many people live in canada as of 2023?")
+
+
+    
+    
+    > Entering new AgentExecutor chain...
+    The current population of Canada is 38,669,152 as of Monday, April 24, 2023, based on Worldometer elaboration of the latest United Nations data.
+    
+    > Finished chain.
+
+
+
+
+
+    'The current population of Canada is 38,669,152 as of Monday, April 24, 2023, based on Worldometer elaboration of the latest United Nations data.'
+
+
+
+
+
+
+
+
+
+
+
+Custom agent with tool retrieval
+This notebook builds off of this notebook and assumes familiarity with how agents work.
+
+The novel idea introduced in this notebook is the idea of using retrieval to select the set of tools to use to answer an agent query. This is useful when you have many many tools to select from. You cannot put the description of all the tools in the prompt (because of context length issues) so instead you dynamically select the N tools you do want to consider using at run time.
+
+In this notebook we will create a somewhat contrieved example. We will have one legitimate tool (search) and then 99 fake tools which are just nonsense. We will then add a step in the prompt template that takes the user input and retrieves tool relevant to the query.
+
+Set up environment
+Do necessary imports, etc.
+
+from langchain.agents import (
+    Tool,
+    AgentExecutor,
+    LLMSingleActionAgent,
+    AgentOutputParser,
+)
+from langchain.prompts import StringPromptTemplate
+from langchain import OpenAI, SerpAPIWrapper, LLMChain
+from typing import List, Union
+from langchain.schema import AgentAction, AgentFinish
+import re
+
+Set up tools
+We will create one legitimate tool (search) and then 99 fake tools
+
+# Define which tools the agent can use to answer user queries
+search = SerpAPIWrapper()
+search_tool = Tool(
+    name="Search",
+    func=search.run,
+    description="useful for when you need to answer questions about current events",
+)
+
+
+def fake_func(inp: str) -> str:
+    return "foo"
+
+
+fake_tools = [
+    Tool(
+        name=f"foo-{i}",
+        func=fake_func,
+        description=f"a silly function that you can use to get more information about the number {i}",
+    )
+    for i in range(99)
+]
+ALL_TOOLS = [search_tool] + fake_tools
+
+
+Tool Retriever
+We will use a vectorstore to create embeddings for each tool description. Then, for an incoming query we can create embeddings for that query and do a similarity search for relevant tools.
+
+from langchain.vectorstores import FAISS
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.schema import Document
+
+docs = [
+    Document(page_content=t.description, metadata={"index": i})
+    for i, t in enumerate(ALL_TOOLS)
+]
+
+
+vector_store = FAISS.from_documents(docs, OpenAIEmbeddings())
+
+
+retriever = vector_store.as_retriever()
+
+
+def get_tools(query):
+    docs = retriever.get_relevant_documents(query)
+    return [ALL_TOOLS[d.metadata["index"]] for d in docs]
+
+We can now test this retriever to see if it seems to work.
+
+get_tools("whats the weather?")
+
+    [Tool(name='Search', description='useful for when you need to answer questions about current events', return_direct=False, verbose=False, callback_manager=<langchain.callbacks.shared.SharedCallbackManager object at 0x114b28a90>, func=<bound method SerpAPIWrapper.run of SerpAPIWrapper(search_engine=<class 'serpapi.google_search.GoogleSearch'>, params={'engine': 'google', 'google_domain': 'google.com', 'gl': 'us', 'hl': 'en'}, serpapi_api_key='', aiosession=None)>, coroutine=None),
+     Tool(name='foo-95', description='a silly function that you can use to get more information about the number 95', return_direct=False, verbose=False, callback_manager=<langchain.callbacks.shared.SharedCallbackManager object at 0x114b28a90>, func=<function fake_func at 0x15e5bd1f0>, coroutine=None),
+     Tool(name='foo-12', description='a silly function that you can use to get more information about the number 12', return_direct=False, verbose=False, callback_manager=<langchain.callbacks.shared.SharedCallbackManager object at 0x114b28a90>, func=<function fake_func at 0x15e5bd1f0>, coroutine=None),
+     Tool(name='foo-15', description='a silly function that you can use to get more information about the number 15', return_direct=False, verbose=False, callback_manager=<langchain.callbacks.shared.SharedCallbackManager object at 0x114b28a90>, func=<function fake_func at 0x15e5bd1f0>, coroutine=None)]
+
+
+get_tools("whats the number 13?")
+
+    [Tool(name='foo-13', description='a silly function that you can use to get more information about the number 13', return_direct=False, verbose=False, callback_manager=<langchain.callbacks.shared.SharedCallbackManager object at 0x114b28a90>, func=<function fake_func at 0x15e5bd1f0>, coroutine=None),
+     Tool(name='foo-12', description='a silly function that you can use to get more information about the number 12', return_direct=False, verbose=False, callback_manager=<langchain.callbacks.shared.SharedCallbackManager object at 0x114b28a90>, func=<function fake_func at 0x15e5bd1f0>, coroutine=None),
+     Tool(name='foo-14', description='a silly function that you can use to get more information about the number 14', return_direct=False, verbose=False, callback_manager=<langchain.callbacks.shared.SharedCallbackManager object at 0x114b28a90>, func=<function fake_func at 0x15e5bd1f0>, coroutine=None),
+     Tool(name='foo-11', description='a silly function that you can use to get more information about the number 11', return_direct=False, verbose=False, callback_manager=<langchain.callbacks.shared.SharedCallbackManager object at 0x114b28a90>, func=<function fake_func at 0x15e5bd1f0>, coroutine=None)]
+
+
+Prompt Template
+The prompt template is pretty standard, because we're not actually changing that much logic in the actual prompt template, but rather we are just changing how retrieval is done.
+
+# Set up the base template
+template = """Answer the following questions as best you can, but speaking as a pirate might speak. You have access to the following tools:
+
+{tools}
+
+Use the following format:
+
+Question: the input question you must answer
+Thought: you should always think about what to do
+Action: the action to take, should be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question
+
+Begin! Remember to speak as a pirate when giving your final answer. Use lots of "Arg"s
+
+Question: {input}
+{agent_scratchpad}"""
+
+
+The custom prompt template now has the concept of a tools_getter, which we call on the input to select the tools to use
+
+from typing import Callable
+
+
+# Set up a prompt template
+class CustomPromptTemplate(StringPromptTemplate):
+    # The template to use
+    template: str
+    ############## NEW ######################
+    # The list of tools available
+    tools_getter: Callable
+
+    def format(self, **kwargs) -> str:
+        # Get the intermediate steps (AgentAction, Observation tuples)
+        # Format them in a particular way
+        intermediate_steps = kwargs.pop("intermediate_steps")
+        thoughts = ""
+        for action, observation in intermediate_steps:
+            thoughts += action.log
+            thoughts += f"\nObservation: {observation}\nThought: "
+        # Set the agent_scratchpad variable to that value
+        kwargs["agent_scratchpad"] = thoughts
+        ############## NEW ######################
+        tools = self.tools_getter(kwargs["input"])
+        # Create a tools variable from the list of tools provided
+        kwargs["tools"] = "\n".join(
+            [f"{tool.name}: {tool.description}" for tool in tools]
+        )
+        # Create a list of tool names for the tools provided
+        kwargs["tool_names"] = ", ".join([tool.name for tool in tools])
+        return self.template.format(**kwargs)
+
+
+prompt = CustomPromptTemplate(
+    template=template,
+    tools_getter=get_tools,
+    # This omits the `agent_scratchpad`, `tools`, and `tool_names` variables because those are generated dynamically
+    # This includes the `intermediate_steps` variable because that is needed
+    input_variables=["input", "intermediate_steps"],
+)
+
+
+Output Parser
+The output parser is unchanged from the previous notebook, since we are not changing anything about the output format.
+
+class CustomOutputParser(AgentOutputParser):
+    def parse(self, llm_output: str) -> Union[AgentAction, AgentFinish]:
+        # Check if agent should finish
+        if "Final Answer:" in llm_output:
+            return AgentFinish(
+                # Return values is generally always a dictionary with a single `output` key
+                # It is not recommended to try anything else at the moment :)
+                return_values={"output": llm_output.split("Final Answer:")[-1].strip()},
+                log=llm_output,
+            )
+        # Parse out the action and action input
+        regex = r"Action\s*\d*\s*:(.*?)\nAction\s*\d*\s*Input\s*\d*\s*:[\s]*(.*)"
+        match = re.search(regex, llm_output, re.DOTALL)
+        if not match:
+            raise ValueError(f"Could not parse LLM output: `{llm_output}`")
+        action = match.group(1).strip()
+        action_input = match.group(2)
+        # Return the action and action input
+        return AgentAction(
+            tool=action, tool_input=action_input.strip(" ").strip('"'), log=llm_output
+        )
+
+
+output_parser = CustomOutputParser()
+
+Set up LLM, stop sequence, and the agent
+Also the same as the previous notebook
+
+llm = OpenAI(temperature=0)
+
+# LLM chain consisting of the LLM and a prompt
+llm_chain = LLMChain(llm=llm, prompt=prompt)
+
+tools = get_tools("whats the weather?")
+tool_names = [tool.name for tool in tools]
+agent = LLMSingleActionAgent(
+    llm_chain=llm_chain,
+    output_parser=output_parser,
+    stop=["\nObservation:"],
+    allowed_tools=tool_names,
+)
+
+Use the Agent
+Now we can use it!
+
+agent_executor = AgentExecutor.from_agent_and_tools(
+    agent=agent, tools=tools, verbose=True
+)
+
+agent_executor.run("What's the weather in SF?")
+
+    
+    
+    > Entering new AgentExecutor chain...
+    Thought: I need to find out what the weather is in SF
+    Action: Search
+    Action Input: Weather in SF
+    
+    Observation:Mostly cloudy skies early, then partly cloudy in the afternoon. High near 60F. ENE winds shifting to W at 10 to 15 mph. Humidity71%. UV Index6 of 10. I now know the final answer
+    Final Answer: 'Arg, 'tis mostly cloudy skies early, then partly cloudy in the afternoon. High near 60F. ENE winds shiftin' to W at 10 to 15 mph. Humidity71%. UV Index6 of 10.
+    
+    > Finished chain.
+
+
+
+
+
+    "'Arg, 'tis mostly cloudy skies early, then partly cloudy in the afternoon. High near 60F. ENE winds shiftin' to W at 10 to 15 mph. Humidity71%. UV Index6 of 10."
+
+
